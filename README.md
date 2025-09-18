@@ -1,202 +1,107 @@
-# Mock Oracle Client
+# Simplified Oracle Client
 
-A mock oracle data feed system that simulates a Chainlink v3 Aggregator using Solidity and a Go backend service.
-
-## Project Structure
-
-```
-├── src/
-│   ├── MockOracle.sol      # Oracle contract implementation
-│   └── Interfaces.sol      # Chainlink-style interfaces
-├── script/
-│   ├── Deploy.s.sol        # Foundry deployment script
-│   └── Update.s.sol        # Example updater script
-├── test/
-│   └── MockOracle.t.sol    # Foundry tests
-├── go-client/
-│   ├── cmd/server/main.go  # Go API server entrypoint
-│   ├── internal/
-│   │   ├── contracts/      # Go contract bindings
-│   │   ├── rpc/           # RPC connection module
-│   │   ├── reader/        # Read oracle data
-│   │   └── updater/       # Update oracle data
-│   ├── api/               # HTTP API handlers and middleware
-│   └── config/            # Configuration management
-├── deployments/
-│   └── anvil.json         # Deployed contract addresses
-└── foundry.toml           # Foundry configuration
-```
+A simplified, production-ready mock oracle system with retry logic, Redis caching, and Postgres persistence.
 
 ## Features
 
-### Smart Contract (Solidity)
-- Mock Oracle that stores historical round data
-- Chainlink-style functions: `latestRoundData()`, `getRoundData()`, `updateAnswer()`
-- Access control for price updates
-- Event emission for price changes
+- **Retry Logic**: Exponential backoff for RPC calls and transactions
+- **Redis Caching**: Fast response times with 10-second TTL
+- **Postgres Persistence**: GORM-based data storage
+- **Docker Compose**: 3-service stack (API, Redis, Postgres)
 
-### Go Oracle Client
-- RPC connection to Ethereum node
-- Read latest and historical round data
-- Send signed transactions to update prices
-- HTTP API with authentication and rate limiting
-- Health check endpoint
+## Quick Start
 
-## Setup
-
-### Prerequisites
-- Foundry (for Solidity development)
-- Go 1.23+ (for Go backend)
-- Anvil (local Ethereum node)
-
-### 1. Install Dependencies
-
+1. **Set environment variables**:
 ```bash
-# Install Foundry dependencies
-forge install foundry-rs/forge-std
-
-# Install Go dependencies
-cd go-client
-go mod tidy
+export RPC_URL="http://localhost:8545"
+export PRIVATE_KEY="your-private-key"
+export CONTRACT_ADDRESS="your-contract-address"
+export API_KEY="your-api-key"
 ```
 
-### 2. Deploy Contract
-
+2. **Start with Docker Compose**:
 ```bash
-# Start Anvil (in a separate terminal)
-anvil
-
-# Deploy the contract
-forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast
+docker-compose up -d
 ```
 
-### 3. Configure Environment
-
-Create a `.env` file in the `go-client` directory with the following variables:
-
+3. **Test the API**:
 ```bash
-# Ethereum RPC URL
-RPC_URL=http://localhost:8545
-
-# Private key for signing transactions (without 0x prefix)
-PRIVATE_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-
-# Contract address (set after deployment)
-CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
-
-# Server port
-SERVER_PORT=8080
-
-# API key for authentication (optional)
-API_KEY=your_api_key_here
-```
-
-**Note:** The Go client will automatically load the `.env` file from the `go-client` directory. If the file doesn't exist, it will show a warning but continue running.
-
-### 4. Run the Go Server
-
-```bash
-cd go-client
-go run cmd/server/main.go
+curl http://localhost:8080/health
+curl http://localhost:8080/latestPrice
 ```
 
 ## API Endpoints
 
-### GET /latestPrice
-Returns the latest round data.
+- `GET /latestPrice` - Get latest price (cached)
+- `GET /round/{id}` - Get specific round data (cached)
+- `POST /updatePrice` - Update price (requires auth)
+- `GET /health` - Health check for all services
 
-**Response:**
-```json
-{
-  "roundId": 12,
-  "answer": "200000000000",
-  "startedAt": 1694981020,
-  "updatedAt": 1694981020,
-  "answeredInRound": 12
-}
+## Architecture
+
+```
+Request → Redis Cache → Postgres DB → Ethereum RPC
 ```
 
-### GET /round/{id}
-Returns data for a specific round.
+Simple, direct flow with automatic fallbacks and caching.
 
-**Response:**
-```json
-{
-  "roundId": 10,
-  "answer": "195000000000",
-  "startedAt": 1694975020,
-  "updatedAt": 1694975020,
-  "answeredInRound": 10
-}
-```
+## Configuration
 
-### POST /updatePrice
-Updates the oracle with a new price (requires authentication).
+All configuration via environment variables:
 
-**Request:**
-```json
-{
-  "newAnswer": "210000000000"
-}
-```
-
-**Response:**
-```json
-{
-  "txHash": "0x123abc...",
-  "roundId": 13,
-  "answer": "210000000000",
-  "updatedAt": 1694983020
-}
-```
-
-### GET /health
-Health check endpoint.
-
-**Response:**
-```json
-{
-  "status": "ok",
-  "rpcConnected": true,
-  "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
-}
-```
-
-## Testing
-
-### Solidity Tests
-```bash
-forge test
-```
-
-### Go Tests
-```bash
-cd go-client
-go test ./...
-```
-
-## Security Features
-
-- Access control for price updates (only contract owner)
-- API authentication for protected endpoints
-- Rate limiting to prevent abuse
-- Input validation for all parameters
-- Secure key management
+- `RPC_URL` - Ethereum RPC endpoint
+- `PRIVATE_KEY` - Wallet private key
+- `CONTRACT_ADDRESS` - Oracle contract address
+- `API_KEY` - API authentication key
+- `REDIS_ADDR` - Redis address (default: localhost:6379)
+- `POSTGRES_HOST` - Postgres host (default: localhost)
+- `POSTGRES_USER` - Postgres user (default: oracle)
+- `POSTGRES_PASSWORD` - Postgres password (default: oracle)
+- `POSTGRES_DB` - Postgres database (default: oracle_db)
 
 ## Development
 
-### Adding New Features
-1. Update the Solidity contract if needed
-2. Regenerate Go bindings: `abigen --abi MockOracle.abi --pkg contracts --type MockOracle --out go-client/internal/contracts/mock_oracle.go`
-3. Update Go modules as needed
-4. Add tests for new functionality
+```bash
+# Run locally
+cd go-client
+go run cmd/server/main.go
 
-### Deployment
-1. Deploy contract to target network
-2. Update deployment configuration
-3. Set environment variables
-4. Start the Go server
+# Build
+go build ./cmd/server
 
-## License
+# Test
+go test ./...
+```
 
-MIT
+## Docker
+
+```bash
+# Build and run
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+## Code Structure
+
+```
+go-client/
+├── internal/
+│   ├── cache/     # Redis operations
+│   ├── db/        # Postgres + GORM
+│   ├── retry/     # Retry logic
+│   ├── reader/    # Contract reads
+│   └── updater/   # Contract writes
+├── api/
+│   └── handlers.go # HTTP handlers
+├── config/
+│   └── config.go   # Configuration
+└── cmd/server/
+    └── main.go     # Application entry
+```
+
+Simple, clean, and maintainable code following KISS principles.
