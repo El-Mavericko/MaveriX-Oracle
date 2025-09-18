@@ -16,6 +16,18 @@ type Config struct {
 	ContractAddress string
 	ServerPort      string
 	APIKey          string
+
+	// Redis configuration
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
+
+	// Postgres configuration
+	PostgresHost     string
+	PostgresPort     string
+	PostgresUser     string
+	PostgresPassword string
+	PostgresDB       string
 }
 
 // LoadConfig loads configuration from environment variables and .env file
@@ -42,6 +54,18 @@ func LoadConfig() (*Config, error) {
 		ContractAddress: getEnv("CONTRACT_ADDRESS", ""),
 		ServerPort:      getEnv("SERVER_PORT", "8080"),
 		APIKey:          getEnv("API_KEY", ""),
+
+		// Redis configuration
+		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisDB:       getEnvAsInt("REDIS_DB", 0),
+
+		// Postgres configuration
+		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
+		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
+		PostgresUser:     getEnv("POSTGRES_USER", "oracle"),
+		PostgresPassword: getEnv("POSTGRES_PASSWORD", "oracle"),
+		PostgresDB:       getEnv("POSTGRES_DB", "oracle_db"),
 	}
 
 	if config.PrivateKey == "" {

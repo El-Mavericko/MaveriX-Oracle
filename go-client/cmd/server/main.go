@@ -11,6 +11,8 @@ import (
 
 	"github.com/114windd/oracle-client/api"
 	"github.com/114windd/oracle-client/config"
+	"github.com/114windd/oracle-client/internal/cache"
+	"github.com/114windd/oracle-client/internal/db"
 	"github.com/114windd/oracle-client/internal/reader"
 	"github.com/114windd/oracle-client/internal/updater"
 	"github.com/ethereum/go-ethereum/common"
@@ -46,8 +48,19 @@ func main() {
 		log.Fatalf("Failed to create updater: %v", err)
 	}
 
+	// Create Redis cache
+	cacheClient := cache.New(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	defer cacheClient.Close()
+
+	// Create Postgres database
+	dbClient, err := db.New(cfg.PostgresHost, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB, cfg.PostgresPort)
+	if err != nil {
+		log.Fatalf("Failed to create database: %v", err)
+	}
+	defer dbClient.Close()
+
 	// Create API
-	apiInstance := api.NewAPI(reader, updater)
+	apiInstance := api.New(reader, updater, cacheClient, dbClient)
 
 	// Setup routes
 	mux := http.NewServeMux()

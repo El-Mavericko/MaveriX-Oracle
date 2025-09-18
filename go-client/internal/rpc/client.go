@@ -64,3 +64,7 @@ func (c *Client) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
 	return c.Client.SuggestGasPrice(ctx)
 }
 
+
+
+
+
