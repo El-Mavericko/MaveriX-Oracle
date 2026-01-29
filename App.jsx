@@ -1,23 +1,40 @@
 import { ethers } from "ethers";
 
-const priceFeedAddress = "0x694AA1769357215DE4FAC081bf1f309aDC325306";
+const CHAINLINK_FEEDS = {
+  11155111: "0x694AA1769357215DE4FAC081bf1f309aDC325306", 
+};
 
-const priceFeedABI = [
-  "function latestAnswer() view returns (int256)"
+const PRICE_FEED_ABI = [
+  {
+    inputs: [],
+    name: "latestAnswer",
+    outputs: [{ internalType: "int256", name: "", type: "int256" }],
+    stateMutability: "view",
+    type: "function",
+  },
 ];
 
-async function loadETHPrice() {
+export async function loadETHPrice() {
   try {
+    if (!window.ethereum) {
+      return { price: null, error: "MetaMask not detected" };
+    }
+
     const provider = new ethers.BrowserProvider(window.ethereum);
-    const priceFeed = new ethers.Contract(priceFeedAddress, priceFeedABI, provider);
-    const price = await priceFeed.latestAnswer();
-    const formattedPrice = (Number(price) / 1e8).toFixed(2);
-    console.log(`ETH/USD Price: $${formattedPrice}`);
-    return formattedPrice;
-  } catch (error) {
-    console.error("Failed to fetch ETH price:", error);
-    return null;
+    const network = await provider.getNetwork();
+    const feedAddress = CHAINLINK_FEEDS[network.chainId];
+
+    if (!feedAddress) {
+      return { price: null, error: `Unsupported network (Chain ID: ${network.chainId})` };
+    }
+
+    const priceFeed = new ethers.Contract(feedAddress, PRICE_FEED_ABI, provider);
+    const rawPrice = await priceFeed.latestAnswer();
+    const formatted = ethers.formatUnits(rawPrice, 8);
+
+    return { price: formatted, error: null };
+  } catch (err) {
+    console.error("Error fetching ETH price:", err);
+    return { price: null, error: "Failed to fetch price" };
   }
 }
-
-export default loadETHPrice;
