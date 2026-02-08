@@ -7,6 +7,8 @@ import './index.css';
 import { Bar, Line } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { useRef } from "react";
+import NeonDashboard from "./NeonDashboard";
+
 
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Title, Tooltip, Legend);
@@ -47,12 +49,12 @@ const TOKENS: Record<string, TokenInfo> = {
     logo: "https://cryptologos.cc/logos/ethereum-eth-logo.png",
   },
   WBTC: {
-    name: "Wrapped BTC",
-    symbol: "WBTC",
-    address: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-    decimals: 8,
-    coingeckoId: "wb-ethereum",
-    logo: "https://cryptologos.cc/logos/bitcoin-btc-logo.png",
+  name: "Wrapped BTC",
+  symbol: "WBTC",
+  address: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  decimals: 8,
+  coingeckoId: "wrapped-bitcoin", // ← ✅ FIXED
+  logo: "https://cryptologos.cc/logos/bitcoin-btc-logo.png",
   },
 };
 
@@ -62,12 +64,14 @@ const tokenABI = [
   "function balanceOf(address) view returns (uint256)",
   "function transfer(address to, uint256 amount) returns (bool)",
   "function mint(address to, uint256 amount)",
-  "function burn(address from, uint256 amount)"
+  "function burn(address from, uint256 amount)",
+  "function owner() view returns (address)"
+
 ];
 
 const priceFeedAddress = "0x694AA1769357215DE4FAC081bf1f309aDC325306";
 const priceFeedABI = [
-  "function latestAnswer() view returns (int256)"
+  "function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)"
 ];
 
 declare global {
@@ -78,7 +82,7 @@ declare global {
 
 function App() {
   const [account, setAccount] = useState<string | null>(null);
-  const [tokenKey, setTokenKey] = useState<string>("MXT");
+  const [tokenKey, setTokenKey] = useState<string>("MX");
   const [tokenBalance, setTokenBalance] = useState<string>("");
   const [tokenPriceUsd, setTokenPriceUsd] = useState<string>("Loading...");
   const [ethPrice, setEthPrice] = useState<string>("Loading...");
@@ -106,6 +110,7 @@ const [recipient, setRecipient] = useState<string>("");
       loadTokenData(account);
       fetchTokenPrice(token.coingeckoId);
       loadETHPrice();
+      fetchEthChartData();
     }
   }, [tokenKey, account]);
 
@@ -119,29 +124,51 @@ const [recipient, setRecipient] = useState<string>("");
     }
   };
 
+console.log("Current tokenKey:", tokenKey);
+console.log("Resolved token:", token);
+
   const loadTokenData = async (userAddress: string) => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const contract = new ethers.Contract(token.address, tokenABI, signer);
-      const balance = await contract.balanceOf(userAddress);
-      setTokenBalance(ethers.formatUnits(balance, token.decimals));
-    } catch (error) {
+     const contract = new ethers.Contract("0x8ec06564305BF5624a784d943572Bc1A0ccB8166", tokenABI, signer);
+const balance = await contract.balanceOf(userAddress);
+setTokenBalance(ethers.formatUnits(balance, 18));
+} catch (error) {
       console.error("Failed to read token data:", error);
     }
   };
 
   const loadETHPrice = async () => {
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const priceFeed = new ethers.Contract(priceFeedAddress, priceFeedABI, provider);
-      const price = await priceFeed.latestAnswer();
-      setEthPrice(`$${(Number(price) / 1e8).toFixed(2)}`);
-    } catch (error) {
-      console.error("Failed to fetch ETH price:", error);
-      setEthPrice("Error");
-    }
-  };
+  try {
+    const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd");
+    const data = await res.json();
+    setEthPrice(`$${data.ethereum.usd}`);
+  } catch (err) {
+    console.error("ETH/USD fetch failed:", err);
+    setEthPrice("Error");
+  }
+};
+
+
+  const fetchEthChartData = async () => {
+try {
+const { data } = await axios.get(
+`https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=7`
+);
+const prices = data.prices;
+const chartLabels = prices.map((p: number[]) =>
+new Date(p[0]).toLocaleDateString()
+);
+const chartData = prices.map((p: number[]) => parseFloat(p[1].toFixed(2)));
+
+
+setEthChartLabels(chartLabels);
+setEthChartData(chartData);
+} catch (err) {
+console.error("Failed to fetch ETH chart data", err);
+}
+};
 
   const fetchTokenPrice = async (coingeckoId: string) => {
     if (!coingeckoId) {
@@ -187,20 +214,28 @@ const [recipient, setRecipient] = useState<string>("");
     }
   };
 
-  const mintTokens = async () => {
-    if (!mintAmount) return alert("Enter mint amount");
-    try {
-      const contract = await getTokenContract();
-      const tx = await contract.mint(account, ethers.parseUnits(mintAmount, token.decimals));
-      const receipt = await tx.wait();
-      addToHistory("Mint", mintAmount, account!, tx.hash, receipt.gasUsed.toString());
-      await loadTokenData(account!);
-    } catch (error) {
-      console.error("Mint failed:", error);
-    }
-  };
+ const mintTokens = async () => {
+  if (tokenKey !== "MXT") {
+    alert("Minting is only allowed for MXT");
+    return;
+  }
 
-  const burnTokens = async () => {
+  if (!mintAmount) return alert("Enter mint amount");
+
+  try {
+    const contract = await getTokenContract();
+    const tx = await contract.mint(account, ethers.parseUnits(mintAmount, token.decimals));
+    const receipt = await tx.wait();
+    addToHistory("Mint", mintAmount, account!, tx.hash, receipt.gasUsed.toString());
+    await loadTokenData(account!);
+  } catch (error) {
+    console.error("Mint failed:", error);
+  }
+};
+
+
+
+ const burnTokens = async () => {
     if (!burnAmount) return alert("Enter burn amount");
     try {
       const contract = await getTokenContract();
@@ -214,105 +249,39 @@ const [recipient, setRecipient] = useState<string>("");
   };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }} className="min-h-screen bg-gray-950 text-white p-6 md:p-10">
-      
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-3 space-y-6">
-          <motion.div className="text-6xl text-center text-white animate-pulse">💀</motion.div>
-          <motion.div className="text-center">
-            <h1 className="text-4xl font-bold text-blue-400">MaveriX Oracle dApp</h1>
-            <p className="text-gray-400">Chainlink | Sepolia | Token Control</p>
-          </motion.div>
+<NeonDashboard
+  tokens={TOKENS}
+  account={account}
+  tokenBalance={tokenBalance}
+  token={token}
+  ethPrice={ethPrice}
+  tokenPriceUsd={tokenPriceUsd}
+  ethChartLabels={ethChartLabels}
+  ethChartData={ethChartData}
+  txHistory={txHistory}
+  connectWallet={connectWallet}
+  transferTokens={transferTokens}
+  mintTokens={mintTokens}
+  burnTokens={burnTokens}
+  recipient={recipient}
+  setRecipient={setRecipient}
+  amount={amount}
+  setAmount={setAmount}
+  mintAmount={mintAmount}
+  setMintAmount={setMintAmount}
+  burnAmount={burnAmount}
+  setBurnAmount={setBurnAmount}
+  tokenKey={tokenKey}
+  setTokenKey={setTokenKey}
 
-          <div className="flex justify-center gap-4">
-            {Object.entries(TOKENS).map(([key, info]) => (
-              <button
-                key={key}
-                onClick={() => setTokenKey(key)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${tokenKey === key ? "border-blue-400 bg-gray-900" : "border-gray-700"}`}
-              >
-                <img src={info.logo} alt={info.symbol} className="w-6 h-6" />
-                <span>{info.symbol}</span>
-              </button>
-            ))}
-          </div>
+/>
 
-          <div className="text-center space-y-1">
-            <p><strong>Token Price (USD):</strong> {tokenPriceUsd}</p>
-            <p><strong>ETH/USD:</strong> {ethPrice}</p>
-          </div>
+);
 
-          {!account ? (
-            <div className="text-center">
-              <button
-                onClick={connectWallet}
-                className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold"
-              >
-                Connect Wallet
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="bg-gray-800 p-4 rounded-xl">
-                <p><strong>Wallet:</strong> {account}</p>
-                <p><strong>Balance:</strong> {tokenBalance} {token.symbol}</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-gray-800 p-4 rounded-xl">
-                  <h3 className="text-xl font-semibold mb-2">Send Tokens</h3>
-                  <input type="text" placeholder="Recipient Address" value={recipient} onChange={(e) => setRecipient(e.target.value)} className="w-full p-2 mb-2 rounded bg-gray-900 border border-gray-700" />
-                  <input type="text" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full p-2 mb-2 rounded bg-gray-900 border border-gray-700" />
-                  <button onClick={transferTokens} className="w-full bg-green-600 hover:bg-green-700 px-4 py-2 rounded">Send</button>
-                </div>
-                <div className="space-y-6">
-                  <div className="bg-gray-800 p-4 rounded-xl">
-                    <h3 className="text-xl font-semibold mb-2">Mint Tokens</h3>
-                    <input type="text" placeholder="Amount to Mint" value={mintAmount} onChange={(e) => setMintAmount(e.target.value)} className="w-full p-2 mb-2 rounded bg-gray-900 border border-gray-700" />
-                    <button onClick={mintTokens} className="w-full bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded">Mint</button>
-                  </div>
-                  <div className="bg-gray-800 p-4 rounded-xl">
-                    <h3 className="text-xl font-semibold mb-2">Burn Tokens</h3>
-                    <input type="text" placeholder="Amount to Burn" value={burnAmount} onChange={(e) => setBurnAmount(e.target.value)} className="w-full p-2 mb-2 rounded bg-gray-900 border border-gray-700" />
-                    <button onClick={burnTokens} className="w-full bg-red-600 hover:bg-red-700 px-4 py-2 rounded">Burn</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+}
 
-        {/* Sidebar Dashboard: Transaction History */}
-        <div className="bg-gray-800 p-4 rounded-xl h-full overflow-y-auto">
-          <h3 className="text-xl font-semibold mb-4">Transaction History</h3>
-          {txHistory.length === 0 ? (
-            <p className="text-gray-400">No transactions yet.</p>
-          ) : (
-            <ul className="space-y-4">
-              {txHistory.map((tx, index) => (
-                <motion.li key={index} initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.3 }} className="bg-gray-900 p-4 rounded border border-gray-700">
-                  <div className="text-sm">
-                    <span className="text-yellow-400">[{tx.timestamp}]</span>
-                    <span className={`ml-2 text-xs px-2 py-1 rounded-full font-semibold ${
-                      tx.type === 'Transfer' ? 'bg-green-700 text-green-200' :
-                      tx.type === 'Mint' ? 'bg-purple-700 text-purple-200' :
-                      'bg-red-700 text-red-200'
-                    }`}>
-                      {tx.type}
-                    </span>
-                    <div className="mt-2">{tx.amount} to {tx.to}</div>
-                    <div>
-                      TX: <a href={`https://sepolia.etherscan.io/tx/${tx.txHash}`} target="_blank" rel="noreferrer" className="text-blue-400 underline">{tx.txHash}</a>
-                    </div>
-                    <div className="text-gray-400">Gas Used: {tx.gasUsed}</div>
-                  </div>
-                </motion.li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </motion.div>
-  );
+export default App;
+;
 }
 
 export default App;
