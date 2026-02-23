@@ -1,4 +1,5 @@
-module github.com/114windd/oracle-client
+module github.com/El-Mavericko/MaveriX-Oracle/go-client
+
 
 go 1.23.0
 
@@ -45,3 +46,4 @@ require (
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 )
+replace github.com/El-Mavericko/MaveriX-Oracle/go-client => .

@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/114windd/oracle-client/internal/cache"
-	"github.com/114windd/oracle-client/internal/db"
-	"github.com/114windd/oracle-client/internal/reader"
-	"github.com/114windd/oracle-client/internal/retry"
-	"github.com/114windd/oracle-client/internal/updater"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/internal/cache"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/internal/db"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/internal/reader"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/internal/retry"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/internal/updater"
 	"github.com/ethereum/go-ethereum/common"
 )
 

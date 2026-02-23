@@ -9,12 +9,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/114windd/oracle-client/api"
-	"github.com/114windd/oracle-client/config"
-	"github.com/114windd/oracle-client/internal/cache"
-	"github.com/114windd/oracle-client/internal/db"
-	"github.com/114windd/oracle-client/internal/reader"
-	"github.com/114windd/oracle-client/internal/updater"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/api"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/config"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/internal/cache"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/internal/db"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/internal/reader"
+	"github.com/El-Mavericko/MaveriX-Oracle/go-client/internal/updater"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
