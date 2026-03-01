@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import type { EventLogEntry } from "../src/app/types/oracle";
+import type { EventLogEntry } from "@/src/app/types";
 
 interface Props {
   entries: EventLogEntry[];

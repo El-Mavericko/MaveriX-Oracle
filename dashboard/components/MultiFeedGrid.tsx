@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import type { FeedConfig, FeedPrice } from "../src/app/types/oracle";
+import type { FeedConfig, FeedPrice } from "@/src/app/types";
 
 interface Props {
   feeds: FeedConfig[];

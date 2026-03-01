@@ -10,7 +10,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
-import type { DeviationPoint } from "../src/app/types/oracle";
+import type { DeviationPoint } from "@/src/app/types";
 
 interface Props {
   history: DeviationPoint[];

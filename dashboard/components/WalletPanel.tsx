@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import { useWeb3 } from "../src/app/Context/Web3Provider";
-import { NETWORK_CONFIGS } from "../src/app/Constants/oracle";
+import { useWeb3 } from "@/src/app/Context";
+import { NETWORK_CONFIGS } from "@/src/app/Constants";
 
 export default function WalletPanel() {
   const { provider, address, chainId } = useWeb3();

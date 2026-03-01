@@ -43,6 +43,12 @@ export function getNetworkConfig(chainId: number | null): NetworkConfig {
   return SEPOLIA_CONFIG;
 }
 
+// Public fallback RPCs — used when no wallet extension is detected
+export const FALLBACK_RPCS: Record<number, string> = {
+  1: "https://eth.llamarpc.com",
+  11155111: "https://rpc.sepolia.org",
+};
+
 // Legacy exports — kept for components that haven't been updated yet
 export const ORACLE_ADDRESS = SEPOLIA_CONFIG.oracleAddress;
 export const FEEDS: FeedConfig[] = SEPOLIA_CONFIG.feeds;

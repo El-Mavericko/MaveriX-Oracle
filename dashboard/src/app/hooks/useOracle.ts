@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ethers } from "ethers";
-import { CHAINLINK_ABI, ORACLE_ABI, getNetworkConfig } from "../Constants/oracle";
-import { useWeb3 } from "../Context/Web3Provider";
-import { useToast } from "../Context/ToastProvider";
+import { CHAINLINK_ABI, ORACLE_ABI, FALLBACK_RPCS, getNetworkConfig } from "@/src/app/Constants";
+import { useWeb3 } from "@/src/app/Context";
+import { useToast } from "@/src/app/Context";
 import { useAlerts } from "./useAlerts";
-import type { FeedPrice, DeviationPoint, EventLogEntry } from "../types/oracle";
+import type { FeedPrice, DeviationPoint, EventLogEntry } from "@/src/app/types";
 
 export function useOracle() {
   const { signer, chainId } = useWeb3();
@@ -30,13 +30,18 @@ export function useOracle() {
 
   /* -----------------------------------------
      FETCH ALL ORACLE FEEDS (read-only)
-     Runs every 15s — fires all three feeds in parallel
+     Uses wallet provider if available, falls back
+     to a public RPC so data loads without MetaMask
   ----------------------------------------- */
   async function fetchOraclePrices() {
-    if (!window.ethereum) return;
     const { feeds } = getNetworkConfig(chainId);
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      // Prefer wallet provider; fall back to public RPC
+      const provider = window.ethereum
+        ? new ethers.BrowserProvider(window.ethereum)
+        : new ethers.JsonRpcProvider(
+            FALLBACK_RPCS[chainId ?? 11155111] ?? FALLBACK_RPCS[11155111]
+          );
 
       const results = await Promise.allSettled(
         feeds.map(async feed => {
@@ -46,7 +51,8 @@ export function useOracle() {
             feedId: feed.id,
             price: Number(data[1]) / 1e8,
             roundId: data[0] as bigint,
-            updatedAt: new Date(),
+            // data[3] is the on-chain updatedAt Unix timestamp — more accurate than client clock
+            updatedAt: new Date(Number(data[3]) * 1000),
           };
         })
       );
@@ -80,7 +86,7 @@ export function useOracle() {
       }
     } catch (err) {
       console.error("Oracle fetch error:", err);
-      addToast("Oracle fetch failed — check wallet connection", "error");
+      addToast("Oracle fetch failed", "error");
     }
   }
 
@@ -177,22 +183,18 @@ export function useOracle() {
   }, [chainId]);
 
   return {
-    // Multi-feed
     feedPrices,
     marketPrices,
     deviationHistory,
     eventLog,
-    // Backward compat for OracleHealthPanel
     price,
     marketPrice,
     lastUpdated,
     updatePrice,
     loading,
-    // Alerts
     alerts,
     addAlert,
     removeAlert,
-    // Active network config (for passing to sub-components)
     networkConfig: getNetworkConfig(chainId),
   };
 }

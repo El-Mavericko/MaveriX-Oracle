@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { PriceAlert } from "../src/app/types/oracle";
+import type { PriceAlert } from "@/src/app/types";
 
 interface Props {
   alerts: PriceAlert[];

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import { ORACLE_ABI } from "../src/app/Constants/oracle";
+import { ORACLE_ABI } from "@/src/app/Constants";
 
 interface Round {
   roundId: string;
