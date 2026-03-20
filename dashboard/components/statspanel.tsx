@@ -15,19 +15,22 @@ export default function StatsPanel() {
 
   useEffect(() => {
     async function fetchStats() {
-      const res = await fetch(
-        "https://api.coingecko.com/api/v3/coins/ethereum?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false"
-      );
-
-      const data = await res.json();
-
-      setStats({
-        high24h: data.market_data.high_24h.usd,
-        low24h: data.market_data.low_24h.usd,
-        volume: data.market_data.total_volume.usd,
-        change7d: data.market_data.price_change_percentage_7d,
-        marketCap: data.market_data.market_cap.usd,
-      });
+      try {
+        const res = await fetch(
+          "https://api.coingecko.com/api/v3/coins/ethereum?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false"
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        setStats({
+          high24h: data.market_data.high_24h.usd,
+          low24h: data.market_data.low_24h.usd,
+          volume: data.market_data.total_volume.usd,
+          change7d: data.market_data.price_change_percentage_7d,
+          marketCap: data.market_data.market_cap.usd,
+        });
+      } catch (err) {
+        console.error("Stats fetch error:", err);
+      }
     }
 
     fetchStats();

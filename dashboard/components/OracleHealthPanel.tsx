@@ -6,11 +6,7 @@ type OracleHealthProps = {
   lastUpdated: Date | null;
 };
 
-export default function OracleHealthPanel({
-  oraclePrice,
-  marketPrice,
-  lastUpdated,
-}: OracleHealthProps) {
+export default function OracleHealthPanel({ oraclePrice, marketPrice, lastUpdated }: OracleHealthProps) {
   const oracle = parseFloat(oraclePrice);
 
   // If we don't have both prices yet, show a clean loading panel
@@ -65,6 +61,8 @@ export default function OracleHealthPanel({
           </div>
         )}
       </div>
+
+      
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
         <div>
