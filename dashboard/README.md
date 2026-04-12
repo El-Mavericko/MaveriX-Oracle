@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MaveriX Oracle Terminal — Dashboard
+
+Real-time DeFi dashboard for the MaveriX Oracle protocol. Displays live Chainlink price feeds, oracle health metrics, and a full lending UI — all in a dark terminal-style interface.
+
+## Features
+
+- Live ETH/USD, BTC/USD, LINK/USD prices from Chainlink (Mainnet + Sepolia)
+- Oracle vs market price deviation tracking with health score
+- Interactive price chart and deviation history
+- Lending panel: deposit WETH, borrow MXT, repay, track health factor
+- Price alert system and on-chain event log
+- Chainlink round explorer
+- Works without a wallet — falls back to a public RPC for read-only mode
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+No `.env` file is required. The dashboard auto-detects MetaMask and falls back to a public Sepolia RPC if no wallet is found.
 
-## Learn More
+To add a custom RPC, update `FALLBACK_RPCS` in `src/app/Constants/oracle.ts`.
 
-To learn more about Next.js, take a look at the following resources:
+## Tech Stack
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Next.js 15 (App Router)
+- ethers.js v6
+- Tailwind CSS v4
+- Framer Motion
+- Recharts

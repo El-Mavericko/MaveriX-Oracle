@@ -1,4 +1,3 @@
-"use client";
 
 import {
   LineChart,
@@ -18,10 +17,10 @@ interface Props {
 
 export default function DeviationChart({ history }: Props) {
   return (
-    <div className="bg-[#161b22] border border-[#30363d] p-6 rounded mb-6">
-      <h2 className="text-gray-400 text-sm mb-4">Oracle Deviation History</h2>
+    <div className="bg-card border border-border p-6 rounded mb-6">
+      <h2 className="text-muted-foreground text-sm mb-4">Oracle Deviation History</h2>
       {history.length < 2 ? (
-        <p className="text-gray-500 text-sm">
+        <p className="text-muted-foreground text-sm">
           Collecting data points — updates every 60s...
         </p>
       ) : (

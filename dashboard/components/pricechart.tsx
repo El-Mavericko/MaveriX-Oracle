@@ -1,4 +1,3 @@
-"use client";
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -119,7 +118,7 @@ export default function PriceChart() {
             className={`px-3 py-1 text-sm rounded transition ${
               timeframe === tf.value
                 ? "bg-blue-600 text-white"
-                : "bg-[#1e293b] text-gray-400 hover:bg-[#334155]"
+                : "bg-muted text-muted-foreground hover:bg-muted/80"
             }`}
           >
             {tf.label}
@@ -128,7 +127,7 @@ export default function PriceChart() {
       </div>
 
       {error ? (
-        <div className="flex items-center justify-center h-[460px] text-gray-500 text-sm">
+        <div className="flex items-center justify-center h-[460px] text-muted-foreground text-sm">
           Chart data unavailable — check your connection
         </div>
       ) : (

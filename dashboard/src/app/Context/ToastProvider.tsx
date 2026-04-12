@@ -51,7 +51,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   ? "bg-green-900 border border-green-700 text-green-100"
                   : toast.type === "error"
                   ? "bg-red-950 border border-red-800 text-red-100"
-                  : "bg-[#1f2937] border border-[#374151] text-gray-200"
+                  : "bg-secondary border border-border text-foreground/80"
               }`}
             >
               <span className="flex-1">{toast.message}</span>

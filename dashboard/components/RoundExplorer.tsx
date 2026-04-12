@@ -1,8 +1,7 @@
-"use client";
 
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import { ORACLE_ABI } from "@/src/app/Constants";
+import { ORACLE_ABI } from "@/src/app/constants";
 
 interface Round {
   roundId: string;
@@ -67,21 +66,21 @@ export default function RoundExplorer({ latestRoundId, oracleAddress }: Props) {
   }, [latestRoundId, page, oracleAddress]);
 
   return (
-    <div className="bg-[#161b22] border border-[#30363d] p-6 rounded mb-6">
+    <div className="bg-card border border-border p-6 rounded mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-gray-400 text-sm">Round History — ETH / USD</h2>
+        <h2 className="text-muted-foreground text-sm">Round History — ETH / USD</h2>
         <div className="flex gap-2">
           <button
             onClick={() => setPage(p => p + 1)}
             disabled={loading}
-            className="text-xs px-3 py-1 bg-[#21262d] hover:bg-[#30363d] rounded disabled:opacity-40"
+            className="text-xs px-3 py-1 bg-muted hover:bg-muted rounded disabled:opacity-40"
           >
             ← Older
           </button>
           <button
             onClick={() => setPage(p => Math.max(0, p - 1))}
             disabled={loading || page === 0}
-            className="text-xs px-3 py-1 bg-[#21262d] hover:bg-[#30363d] rounded disabled:opacity-40"
+            className="text-xs px-3 py-1 bg-muted hover:bg-muted rounded disabled:opacity-40"
           >
             Newer →
           </button>
@@ -89,13 +88,13 @@ export default function RoundExplorer({ latestRoundId, oracleAddress }: Props) {
       </div>
 
       {!latestRoundId ? (
-        <p className="text-gray-500 text-sm">Connect wallet to explore oracle rounds...</p>
+        <p className="text-muted-foreground text-sm">Connect wallet to explore oracle rounds...</p>
       ) : loading ? (
-        <p className="text-gray-500 text-sm">Loading rounds...</p>
+        <p className="text-muted-foreground text-sm">Loading rounds...</p>
       ) : (
         <table className="w-full text-sm font-mono">
           <thead>
-            <tr className="text-gray-500 text-xs border-b border-[#21262d]">
+            <tr className="text-muted-foreground text-xs border-b border-border">
               <th className="text-left pb-2 font-normal">Round</th>
               <th className="text-left pb-2 font-normal">Price</th>
               <th className="text-left pb-2 font-normal">Timestamp</th>
@@ -105,11 +104,11 @@ export default function RoundExplorer({ latestRoundId, oracleAddress }: Props) {
             {rounds.map(round => (
               <tr
                 key={round.roundId}
-                className="border-b border-[#21262d] hover:bg-[#1c2128] transition-colors"
+                className="border-b border-border hover:bg-secondary transition-colors"
               >
                 <td className="py-2 text-blue-400">{round.roundId}</td>
                 <td className="py-2 text-green-400">{round.price}</td>
-                <td className="py-2 text-gray-400">{round.updatedAt.toLocaleString()}</td>
+                <td className="py-2 text-muted-foreground">{round.updatedAt.toLocaleString()}</td>
               </tr>
             ))}
           </tbody>

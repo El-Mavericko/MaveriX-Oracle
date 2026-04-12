@@ -27,7 +27,7 @@ export const NETWORK_CONFIGS: Record<number, NetworkConfig> = {
   },
   11155111: {
     label: "Sepolia",
-    oracleAddress: "0x694AA1769357215DE4FAC081bf1f309aDC325306",
+    oracleAddress: "0x2cFeEfdF5bbDfe530b81Fbe6caf20b17f7C4D942",
     feeds: [
       { id: "eth", label: "ETH / USD", address: "0x694AA1769357215DE4FAC081bf1f309aDC325306", coinGeckoId: "ethereum" },
       { id: "btc", label: "BTC / USD", address: "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43", coinGeckoId: "bitcoin" },
@@ -46,7 +46,7 @@ export function getNetworkConfig(chainId: number | null): NetworkConfig {
 // Public fallback RPCs — used when no wallet extension is detected
 export const FALLBACK_RPCS: Record<number, string> = {
   1: "https://eth.llamarpc.com",
-  11155111: "https://rpc.sepolia.org",
+  11155111: "https://ethereum-sepolia-rpc.publicnode.com",
 };
 
 // Legacy exports — kept for components that haven't been updated yet

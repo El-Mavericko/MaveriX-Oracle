@@ -1,6 +1,6 @@
-"use client";
 
 import { motion } from "framer-motion";
+import { DEVIATION_HEALTHY_PCT } from "@/src/app/constants";
 import type { FeedConfig, FeedPrice } from "@/src/app/types";
 
 interface Props {
@@ -23,9 +23,9 @@ export default function MultiFeedGrid({ feeds, feedPrices, marketPrices }: Props
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: i * 0.08 }}
-            className="bg-[#161b22] border border-[#30363d] p-4 rounded"
+            className="bg-card border border-border p-4 rounded"
           >
-            <p className="text-xs text-gray-500 mb-1">{feed.label}</p>
+            <p className="text-xs text-muted-foreground mb-1">{feed.label}</p>
             <p className="text-2xl font-bold text-white">
               {fp
                 ? `$${fp.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -34,7 +34,7 @@ export default function MultiFeedGrid({ feeds, feedPrices, marketPrices }: Props
             {deviation !== null && (
               <p
                 className={`text-xs mt-1 ${
-                  Math.abs(deviation) < 0.5 ? "text-green-400" : "text-yellow-400"
+                  Math.abs(deviation) < DEVIATION_HEALTHY_PCT ? "text-green-400" : "text-yellow-400"
                 }`}
               >
                 {deviation >= 0 ? "+" : ""}
@@ -42,7 +42,7 @@ export default function MultiFeedGrid({ feeds, feedPrices, marketPrices }: Props
               </p>
             )}
             {fp && (
-              <p className="text-xs text-gray-600 mt-1">
+              <p className="text-xs text-muted-foreground/70 mt-1">
                 Updated {fp.updatedAt.toLocaleTimeString()}
               </p>
             )}

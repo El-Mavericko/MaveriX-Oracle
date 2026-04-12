@@ -1,8 +1,8 @@
-"use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ethers } from "ethers";
-import { useWeb3 } from "@/src/app/Context";
+import { useWeb3 } from "@/src/app/context";
+import { SWAP_SLIPPAGE_TOLERANCE, SWAP_QUOTE_DEBOUNCE_MS, UNISWAP_FEE_TIER_LOW, UNISWAP_FEE_TIER_MEDIUM, PRICE_IMPACT_HIGH_PCT, PRICE_IMPACT_MEDIUM_PCT, PRICE_IMPACT_MIN_DISPLAY } from "@/src/app/constants";
 import type { FeedPrice } from "@/src/app/types";
 
 // ── Uniswap V3 Sepolia ────────────────────────────────────────────────────────
@@ -45,8 +45,8 @@ const TOKENS: Record<TokenKey, Token> = {
 const TOKEN_KEYS = Object.keys(TOKENS) as TokenKey[];
 
 function getFeeTier(from: TokenKey, to: TokenKey): number {
-  if (from === "USDC" || to === "USDC") return 500;
-  return 3000;
+  if (from === "USDC" || to === "USDC") return UNISWAP_FEE_TIER_LOW;
+  return UNISWAP_FEE_TIER_MEDIUM;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -205,7 +205,7 @@ export default function SwapPanel({ feedPrices }: Props) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       runQuote(fromToken, toToken, amountIn);
-    }, 600);
+    }, SWAP_QUOTE_DEBOUNCE_MS);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [fromToken, toToken, amountIn, runQuote]);
 
@@ -231,7 +231,7 @@ export default function SwapPanel({ feedPrices }: Props) {
       const to          = TOKENS[toToken];
       const fee         = getFeeTier(fromToken, toToken);
       const amountInWei = ethers.parseUnits(amountIn, from.decimals);
-      const minOutRaw   = parseFloat(quoteOut) * 0.995;
+      const minOutRaw   = parseFloat(quoteOut) * SWAP_SLIPPAGE_TOLERANCE;
       const amountOutMin = ethers.parseUnits(
         fmtAmount(minOutRaw, to.decimals),
         to.decimals
@@ -280,7 +280,7 @@ export default function SwapPanel({ feedPrices }: Props) {
   const fromUSDprice = tokenUSD(fromToken, feedPrices);
   const toUSDprice   = tokenUSD(toToken,   feedPrices);
   const oracleRate   = getOracleRate(fromToken, toToken, feedPrices);
-  const feePct       = getFeeTier(fromToken, toToken) === 500 ? "0.05%" : "0.3%";
+  const feePct       = getFeeTier(fromToken, toToken) === UNISWAP_FEE_TIER_LOW ? "0.05%" : "0.3%";
 
   const fromUSD = fromUSDprice && amountIn
     ? fromUSDprice * parseFloat(amountIn) : null;
@@ -288,9 +288,9 @@ export default function SwapPanel({ feedPrices }: Props) {
     ? toUSDprice * parseFloat(quoteOut) : null;
 
   const impactColor =
-    priceImpact === null          ? "text-gray-400"
-    : Math.abs(priceImpact) > 3   ? "text-red-400"
-    : Math.abs(priceImpact) > 1   ? "text-yellow-400"
+    priceImpact === null          ? "text-muted-foreground"
+    : Math.abs(priceImpact) > PRICE_IMPACT_HIGH_PCT   ? "text-red-400"
+    : Math.abs(priceImpact) > PRICE_IMPACT_MEDIUM_PCT   ? "text-yellow-400"
     : "text-green-400";
 
   const spread = oracleRate && uniRate
@@ -312,16 +312,16 @@ export default function SwapPanel({ feedPrices }: Props) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="bg-[#161b22] border border-[#30363d] rounded-2xl mb-6 overflow-hidden">
+    <div className="bg-card border border-border rounded-2xl mb-6 overflow-hidden">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="px-6 pt-6 pb-4 border-b border-[#30363d]">
+      <div className="px-6 pt-6 pb-4 border-b border-border">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-white font-semibold text-base tracking-wide">Swap</h3>
-            <p className="text-gray-500 text-xs mt-0.5">Trade tokens instantly via Uniswap V3</p>
+            <p className="text-muted-foreground text-xs mt-0.5">Trade tokens instantly via Uniswap V3</p>
           </div>
-          <span className="text-xs text-gray-600 border border-[#30363d] px-2 py-1 rounded-lg">
+          <span className="text-xs text-muted-foreground/70 border border-border px-2 py-1 rounded-lg">
             Sepolia
           </span>
         </div>
@@ -330,12 +330,12 @@ export default function SwapPanel({ feedPrices }: Props) {
       <div className="p-5 space-y-1">
 
         {/* ── YOU PAY box ───────────────────────────────────────────────────── */}
-        <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-4 hover:border-[#444c56] transition-colors">
+        <div className="bg-background border border-border rounded-xl p-4 hover:border-muted-foreground/40 transition-colors">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-gray-500 text-xs font-medium">You pay</span>
+            <span className="text-muted-foreground text-xs font-medium">You pay</span>
             {address && (
               <div className="flex items-center gap-1.5">
-                <span className="text-gray-500 text-xs">
+                <span className="text-muted-foreground text-xs">
                   Balance: {fromBal !== null ? fromBal : "—"}
                 </span>
                 {fromBal && parseFloat(fromBal) > 0 && (
@@ -362,7 +362,7 @@ export default function SwapPanel({ feedPrices }: Props) {
               onChange={e => setAmountIn(e.target.value)}
               placeholder="0"
               className="flex-1 bg-transparent text-white text-3xl font-light outline-none
-                         placeholder-gray-700 min-w-0
+                         placeholder-muted-foreground/30 min-w-0
                          [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none
                          [&::-webkit-inner-spin-button]:appearance-none"
             />
@@ -381,15 +381,15 @@ export default function SwapPanel({ feedPrices }: Props) {
                             ${TOKENS[fromToken].color}`}
               >
                 {TOKEN_KEYS.map(k => (
-                  <option key={k} value={k} className="bg-[#0d1117] text-white">{k}</option>
+                  <option key={k} value={k} className="bg-background text-white">{k}</option>
                 ))}
               </select>
-              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">▾</span>
+              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">▾</span>
             </div>
           </div>
 
           {/* USD equivalent */}
-          <p className="text-gray-600 text-xs mt-2">
+          <p className="text-muted-foreground/70 text-xs mt-2">
             {fromUSD !== null ? fmtUSD(fromUSD) : fromUSDprice ? fmtUSD(0) : "—"}
           </p>
         </div>
@@ -398,9 +398,9 @@ export default function SwapPanel({ feedPrices }: Props) {
         <div className="flex justify-center relative z-10 -my-1">
           <button
             onClick={flipTokens}
-            className="bg-[#1c2333] hover:bg-[#252d40] border-2 border-[#0d1117]
+            className="bg-secondary hover:bg-accent border-2 border-background
                        rounded-full p-2.5 transition-all hover:scale-110 hover:rotate-180
-                       duration-200 text-gray-400 hover:text-white shadow-lg"
+                       duration-200 text-muted-foreground hover:text-white shadow-lg"
             aria-label="Flip tokens"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -410,11 +410,11 @@ export default function SwapPanel({ feedPrices }: Props) {
         </div>
 
         {/* ── YOU RECEIVE box ───────────────────────────────────────────────── */}
-        <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-4 hover:border-[#444c56] transition-colors">
+        <div className="bg-background border border-border rounded-xl p-4 hover:border-muted-foreground/40 transition-colors">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-gray-500 text-xs font-medium">You receive</span>
+            <span className="text-muted-foreground text-xs font-medium">You receive</span>
             {address && (
-              <span className="text-gray-500 text-xs">
+              <span className="text-muted-foreground text-xs">
                 Balance: {toBal !== null ? toBal : "—"}
               </span>
             )}
@@ -426,12 +426,12 @@ export default function SwapPanel({ feedPrices }: Props) {
               {quoting ? (
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-gray-500 text-lg">Fetching…</span>
+                  <span className="text-muted-foreground text-lg">Fetching…</span>
                 </div>
               ) : quoteOut ? (
                 <span className="text-white text-3xl font-light">{quoteOut}</span>
               ) : (
-                <span className="text-gray-700 text-3xl font-light">0</span>
+                <span className="text-muted-foreground/40 text-3xl font-light">0</span>
               )}
             </div>
 
@@ -449,33 +449,33 @@ export default function SwapPanel({ feedPrices }: Props) {
                             ${TOKENS[toToken].color}`}
               >
                 {TOKEN_KEYS.map(k => (
-                  <option key={k} value={k} className="bg-[#0d1117] text-white">{k}</option>
+                  <option key={k} value={k} className="bg-background text-white">{k}</option>
                 ))}
               </select>
-              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">▾</span>
+              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">▾</span>
             </div>
           </div>
 
           {/* USD equivalent */}
-          <p className="text-gray-600 text-xs mt-2">
+          <p className="text-muted-foreground/70 text-xs mt-2">
             {toUSD !== null ? fmtUSD(toUSD) : "—"}
           </p>
         </div>
 
         {/* ── Transaction Overview ──────────────────────────────────────────── */}
         {(oracleRate || uniRate || quoteError) && (
-          <div className="border border-[#30363d] rounded-xl overflow-hidden">
+          <div className="border border-border rounded-xl overflow-hidden">
 
             {/* Collapsible header */}
             <button
               onClick={() => setOverviewOpen(o => !o)}
               className="w-full flex items-center justify-between px-4 py-3
-                         text-xs font-medium hover:bg-[#1c2333] transition-colors"
+                         text-xs font-medium hover:bg-secondary transition-colors"
             >
               <div className="flex items-center gap-2">
                 {uniRate && oracleRate ? (
                   <>
-                    <span className="text-gray-400">
+                    <span className="text-muted-foreground">
                       1 {fromToken} ≈{" "}
                       <span className="text-white">
                         {fmtAmount(uniRate, TOKENS[toToken].decimals)} {toToken}
@@ -488,19 +488,19 @@ export default function SwapPanel({ feedPrices }: Props) {
                     )}
                   </>
                 ) : (
-                  <span className="text-gray-500">Transaction overview</span>
+                  <span className="text-muted-foreground">Transaction overview</span>
                 )}
               </div>
-              <span className="text-gray-600 text-sm">{overviewOpen ? "▴" : "▾"}</span>
+              <span className="text-muted-foreground/70 text-sm">{overviewOpen ? "▴" : "▾"}</span>
             </button>
 
             {/* Expanded rows */}
             {overviewOpen && (
-              <div className="border-t border-[#30363d] divide-y divide-[#30363d]/50 text-xs">
+              <div className="border-t border-border divide-y divide-border/50 text-xs">
 
                 {/* Oracle rate row */}
                 <div className="flex justify-between px-4 py-2.5">
-                  <span className="text-gray-500 flex items-center gap-1.5">
+                  <span className="text-muted-foreground flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
                     Chainlink oracle price
                   </span>
@@ -514,7 +514,7 @@ export default function SwapPanel({ feedPrices }: Props) {
                 {/* Uniswap rate row */}
                 {uniRate && (
                   <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-gray-500 flex items-center gap-1.5">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
                       Uniswap V3 price ({feePct} fee)
                     </span>
@@ -527,8 +527,8 @@ export default function SwapPanel({ feedPrices }: Props) {
                 {/* Spread */}
                 {spread !== null && (
                   <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-gray-500">Oracle vs DEX spread</span>
-                    <span className={Math.abs(spread) > 1 ? "text-red-400" : "text-gray-400"}>
+                    <span className="text-muted-foreground">Oracle vs DEX spread</span>
+                    <span className={Math.abs(spread) > 1 ? "text-red-400" : "text-muted-foreground"}>
                       {spread > 0
                         ? `Oracle +${spread.toFixed(3)}%`
                         : `DEX +${Math.abs(spread).toFixed(3)}%`}
@@ -539,9 +539,9 @@ export default function SwapPanel({ feedPrices }: Props) {
                 {/* Price impact */}
                 {priceImpact !== null && (
                   <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-gray-500">Price impact</span>
+                    <span className="text-muted-foreground">Price impact</span>
                     <span className={impactColor}>
-                      {Math.abs(priceImpact) < 0.001
+                      {Math.abs(priceImpact) < PRICE_IMPACT_MIN_DISPLAY
                         ? "< 0.001%"
                         : `${Math.abs(priceImpact).toFixed(3)}%`}
                     </span>
@@ -550,16 +550,16 @@ export default function SwapPanel({ feedPrices }: Props) {
 
                 {/* Max slippage */}
                 <div className="flex justify-between px-4 py-2.5">
-                  <span className="text-gray-500">Max slippage</span>
-                  <span className="text-gray-400">0.50%</span>
+                  <span className="text-muted-foreground">Max slippage</span>
+                  <span className="text-muted-foreground">0.50%</span>
                 </div>
 
                 {/* Min received */}
                 {quoteOut && (
                   <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-gray-500">Min received</span>
-                    <span className="text-gray-300 font-mono">
-                      {fmtAmount(parseFloat(quoteOut) * 0.995, TOKENS[toToken].decimals)} {toToken}
+                    <span className="text-muted-foreground">Min received</span>
+                    <span className="text-foreground/80 font-mono">
+                      {fmtAmount(parseFloat(quoteOut) * SWAP_SLIPPAGE_TOLERANCE, TOKENS[toToken].decimals)} {toToken}
                     </span>
                   </div>
                 )}
@@ -567,8 +567,8 @@ export default function SwapPanel({ feedPrices }: Props) {
                 {/* Gas */}
                 {gasEst && (
                   <div className="flex justify-between px-4 py-2.5">
-                    <span className="text-gray-500">Est. gas units</span>
-                    <span className="text-gray-400">{parseInt(gasEst).toLocaleString()}</span>
+                    <span className="text-muted-foreground">Est. gas units</span>
+                    <span className="text-muted-foreground">{parseInt(gasEst).toLocaleString()}</span>
                   </div>
                 )}
 
@@ -621,13 +621,13 @@ export default function SwapPanel({ feedPrices }: Props) {
                      enabled:hover:shadow-violet-900/40
                      bg-gradient-to-r from-violet-600 to-purple-600
                      disabled:from-gray-700 disabled:to-gray-700
-                     disabled:text-gray-400 enabled:text-white"
+                     disabled:text-muted-foreground enabled:text-white"
         >
           {btnLabel}
         </button>
 
         {/* Footer */}
-        <p className="text-center text-gray-700 text-xs pt-1">
+        <p className="text-center text-muted-foreground/40 text-xs pt-1">
           Powered by Uniswap V3 · Sepolia · {feePct} fee tier
         </p>
 
