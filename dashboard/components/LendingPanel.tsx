@@ -1,17 +1,17 @@
-"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
-import { useWeb3 } from "@/src/app/Context";
+import { useWeb3 } from "@/src/app/context";
+import { HF_SAFE, HF_MODERATE, HF_AT_RISK, HF_MAX_DISPLAY, COPY_FEEDBACK_MS } from "@/src/app/constants";
 import type { FeedPrice } from "@/src/app/types";
 
 // ── Contract Addresses (fill in after deployment) ─────────────────────────────
 
-const LENDING_POOL_ADDRESS = "0x0000000000000000000000000000000000000000";
-const MXT_ADDRESS          = "0x0000000000000000000000000000000000000000";
+const LENDING_POOL_ADDRESS = "0x01baa4911c9c9D5b8bBF231508156E78dF7dAD68";
+const MXT_ADDRESS          = "0x8Bd57b99016249c0C5d32030ab2ee370348003AD";
 const WETH_ADDRESS         = "0xdd13E55209Fd76AfE204dBda4007C227904f0a81"; // Sepolia WETH
 
-const IS_DEPLOYED = LENDING_POOL_ADDRESS !== "0x0000000000000000000000000000000000000000";
+const IS_DEPLOYED = (LENDING_POOL_ADDRESS as string) !== "0x0000000000000000000000000000000000000000";
 
 // ── ABIs ──────────────────────────────────────────────────────────────────────
 
@@ -49,23 +49,23 @@ interface Props {
 // ── Health factor helpers ─────────────────────────────────────────────────────
 
 function hfColor(hf: number): string {
-  if (hf >= 2.0)  return "text-green-400";
-  if (hf >= 1.25) return "text-yellow-400";
-  if (hf >= 1.0)  return "text-orange-400";
+  if (hf >= HF_SAFE)  return "text-green-400";
+  if (hf >= HF_MODERATE) return "text-yellow-400";
+  if (hf >= HF_AT_RISK)  return "text-orange-400";
   return "text-red-400";
 }
 
 function hfBarColor(hf: number): string {
-  if (hf >= 2.0)  return "bg-green-500";
-  if (hf >= 1.25) return "bg-yellow-500";
-  if (hf >= 1.0)  return "bg-orange-500";
+  if (hf >= HF_SAFE)  return "bg-green-500";
+  if (hf >= HF_MODERATE) return "bg-yellow-500";
+  if (hf >= HF_AT_RISK)  return "bg-orange-500";
   return "bg-red-500";
 }
 
 function hfLabel(hf: number): string {
-  if (hf >= 2.0)  return "Safe";
-  if (hf >= 1.25) return "Moderate";
-  if (hf >= 1.0)  return "At risk";
+  if (hf >= HF_SAFE)  return "Safe";
+  if (hf >= HF_MODERATE) return "Moderate";
+  if (hf >= HF_AT_RISK)  return "At risk";
   return "Liquidatable";
 }
 
@@ -123,7 +123,7 @@ export default function LendingPanel({ feedPrices }: Props) {
       const wRaw = await weth.balanceOf(address) as bigint;
       setWethBal(parseFloat(ethers.formatEther(wRaw)).toFixed(4));
 
-      if (MXT_ADDRESS !== "0x0000000000000000000000000000000000000000") {
+      if ((MXT_ADDRESS as string) !== "0x0000000000000000000000000000000000000000") {
         const mxt  = new ethers.Contract(MXT_ADDRESS, ERC20_ABI, p);
         const mRaw = await mxt.balanceOf(address) as bigint;
         setMxtBal(parseFloat(ethers.formatEther(mRaw)).toFixed(2));
@@ -232,19 +232,19 @@ export default function LendingPanel({ feedPrices }: Props) {
   const activeTab = TABS.find(t => t.key === tab)!;
 
   const hf    = position?.healthFactor ?? null;
-  const hfPct = hf !== null ? Math.min((hf / 3) * 100, 100) : 0;
+  const hfPct = hf !== null ? Math.min((hf / HF_MAX_DISPLAY) * 100, 100) : 0;
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="bg-[#161b22] border border-[#30363d] rounded-2xl mb-6 overflow-hidden">
+    <div className="bg-card border border-border rounded-2xl mb-6 overflow-hidden">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="px-6 pt-6 pb-4 border-b border-[#30363d]">
+      <div className="px-6 pt-6 pb-4 border-b border-border">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-white font-semibold text-base tracking-wide">MaveriX Lending</h3>
-            <p className="text-gray-500 text-xs mt-0.5">Deposit WETH · Borrow MXT · 5% APR</p>
+            <p className="text-muted-foreground text-xs mt-0.5">Deposit WETH · Borrow MXT · 5% APR</p>
           </div>
           <div className="flex items-center gap-2">
             {!IS_DEPLOYED && (
@@ -253,21 +253,21 @@ export default function LendingPanel({ feedPrices }: Props) {
                 Not deployed
               </span>
             )}
-            <span className="text-xs text-gray-600 border border-[#30363d] px-2 py-1 rounded-lg">Sepolia</span>
+            <span className="text-xs text-muted-foreground/70 border border-border px-2 py-1 rounded-lg">Sepolia</span>
           </div>
         </div>
       </div>
 
       {/* ── Not deployed notice ─────────────────────────────────────────────── */}
       {!IS_DEPLOYED && (
-        <div className="mx-5 mt-4 mb-0 p-4 bg-[#0d1117] border border-[#30363d] rounded-xl text-xs text-gray-500 space-y-1.5">
-          <p className="text-gray-300 font-medium mb-2">Deploy to activate</p>
+        <div className="mx-5 mt-4 mb-0 p-4 bg-background border border-border rounded-xl text-xs text-muted-foreground space-y-1.5">
+          <p className="text-foreground/80 font-medium mb-2">Deploy to activate</p>
           <p>Run the deploy script on Sepolia, then paste the contract addresses:</p>
-          <code className="block bg-[#161b22] border border-[#30363d] rounded px-3 py-2 text-gray-400 leading-6">
+          <code className="block bg-card border border-border rounded px-3 py-2 text-muted-foreground leading-6">
             forge script script/DeployLending.s.sol \<br/>
             {"  "}--rpc-url sepolia --broadcast
           </code>
-          <p className="text-gray-600 pt-1">
+          <p className="text-muted-foreground/70 pt-1">
             Then update <span className="text-blue-400">LENDING_POOL_ADDRESS</span> and{" "}
             <span className="text-blue-400">MXT_ADDRESS</span> in <span className="font-mono">LendingPanel.tsx</span>.
           </p>
@@ -277,16 +277,16 @@ export default function LendingPanel({ feedPrices }: Props) {
       <div className="p-5 space-y-4">
 
         {/* ── Position summary ────────────────────────────────────────────────── */}
-        <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-4">
+        <div className="bg-background border border-border rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-gray-500 text-xs font-medium uppercase tracking-wider">Your Position</span>
+            <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Your Position</span>
             {fetching && (
               <div className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
             )}
             {address && IS_DEPLOYED && (
               <button
                 onClick={() => { fetchPosition(); fetchBalances(); }}
-                className="text-gray-600 hover:text-gray-400 text-xs transition-colors"
+                className="text-muted-foreground/70 hover:text-muted-foreground text-xs transition-colors"
               >
                 ↻ refresh
               </button>
@@ -297,7 +297,7 @@ export default function LendingPanel({ feedPrices }: Props) {
           {hf !== null && (
             <div className="mb-4">
               <div className="flex justify-between items-baseline mb-1.5">
-                <span className="text-gray-500 text-xs">Health Factor</span>
+                <span className="text-muted-foreground text-xs">Health Factor</span>
                 <div className="flex items-baseline gap-1.5">
                   <span className={`font-bold text-xl ${hfColor(hf)}`}>
                     {hf === Infinity ? "∞" : hf.toFixed(2)}
@@ -306,81 +306,81 @@ export default function LendingPanel({ feedPrices }: Props) {
                 </div>
               </div>
               {/* Health bar */}
-              <div className="w-full bg-[#1c2333] rounded-full h-2">
+              <div className="w-full bg-secondary rounded-full h-2">
                 <div
                   className={`h-2 rounded-full transition-all duration-500 ${hfBarColor(hf)}`}
                   style={{ width: `${hfPct}%` }}
                 />
               </div>
-              <div className="flex justify-between text-gray-700 text-xs mt-1">
-                <span>1.0 (liquidation)</span>
-                <span>3.0+</span>
+              <div className="flex justify-between text-muted-foreground/40 text-xs mt-1">
+                <span>{HF_AT_RISK} (liquidation)</span>
+                <span>{HF_MAX_DISPLAY}+</span>
               </div>
             </div>
           )}
 
           {/* Stats grid */}
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="bg-[#161b22] rounded-lg p-3">
-              <p className="text-gray-600 text-xs mb-1">Collateral</p>
+            <div className="bg-card rounded-lg p-3">
+              <p className="text-muted-foreground/70 text-xs mb-1">Collateral</p>
               <p className="text-white font-mono">
                 {position ? `${position.collateral.toFixed(4)} WETH` : IS_DEPLOYED && address ? "—" : "0.0000 WETH"}
               </p>
               {position && ethPrice && (
-                <p className="text-gray-600 text-xs mt-0.5">
+                <p className="text-muted-foreground/70 text-xs mt-0.5">
                   ${(position.collateral * ethPrice).toLocaleString("en-US", { maximumFractionDigits: 2 })}
                 </p>
               )}
             </div>
-            <div className="bg-[#161b22] rounded-lg p-3">
-              <p className="text-gray-600 text-xs mb-1">Debt</p>
+            <div className="bg-card rounded-lg p-3">
+              <p className="text-muted-foreground/70 text-xs mb-1">Debt</p>
               <p className="text-white font-mono">
                 {position ? `${position.debt.toFixed(2)} MXT` : IS_DEPLOYED && address ? "—" : "0.00 MXT"}
               </p>
               {position && (
-                <p className="text-gray-600 text-xs mt-0.5">
+                <p className="text-muted-foreground/70 text-xs mt-0.5">
                   ${position.debtUSD.toFixed(2)}
                 </p>
               )}
             </div>
-            <div className="bg-[#161b22] rounded-lg p-3">
-              <p className="text-gray-600 text-xs mb-1">Max borrow</p>
+            <div className="bg-card rounded-lg p-3">
+              <p className="text-muted-foreground/70 text-xs mb-1">Max borrow</p>
               <p className="text-white font-mono">
                 {position ? `${position.maxBorrow.toFixed(2)} MXT` : "—"}
               </p>
             </div>
-            <div className="bg-[#161b22] rounded-lg p-3">
-              <p className="text-gray-600 text-xs mb-1">Borrow APR</p>
+            <div className="bg-card rounded-lg p-3">
+              <p className="text-muted-foreground/70 text-xs mb-1">Borrow APR</p>
               <p className="text-orange-400 font-mono font-semibold">5.00%</p>
-              <p className="text-gray-600 text-xs mt-0.5">accrued per second</p>
+              <p className="text-muted-foreground/70 text-xs mt-0.5">accrued per second</p>
             </div>
           </div>
 
           {!address && (
-            <p className="text-gray-600 text-xs text-center mt-3">Connect wallet to view position</p>
+            <p className="text-muted-foreground/70 text-xs text-center mt-3">Connect wallet to view position</p>
           )}
         </div>
 
         {/* ── Protocol parameters ─────────────────────────────────────────────── */}
-        <div className="border border-[#30363d] rounded-xl divide-y divide-[#30363d]/50 text-xs">
+        <div className="border border-border rounded-xl divide-y divide-border/50 text-xs">
           <div className="flex justify-between px-4 py-2.5">
-            <span className="text-gray-500">Collateral factor (max LTV)</span>
-            <span className="text-gray-300">75%</span>
+            <span className="text-muted-foreground">Collateral factor (max LTV)</span>
+            <span className="text-foreground/80">75%</span>
           </div>
           <div className="flex justify-between px-4 py-2.5">
-            <span className="text-gray-500">Liquidation threshold</span>
-            <span className="text-gray-300">80%</span>
+            <span className="text-muted-foreground">Liquidation threshold</span>
+            <span className="text-foreground/80">80%</span>
           </div>
           <div className="flex justify-between px-4 py-2.5">
-            <span className="text-gray-500">Liquidation bonus</span>
-            <span className="text-gray-300">+10%</span>
+            <span className="text-muted-foreground">Liquidation bonus</span>
+            <span className="text-foreground/80">+10%</span>
           </div>
           <div className="flex justify-between px-4 py-2.5">
-            <span className="text-gray-500">Collateral asset</span>
+            <span className="text-muted-foreground">Collateral asset</span>
             <span className="text-blue-400 font-mono">WETH</span>
           </div>
           <div className="flex justify-between px-4 py-2.5">
-            <span className="text-gray-500">Borrow asset</span>
+            <span className="text-muted-foreground">Borrow asset</span>
             <span className="text-violet-400 font-mono">MXT (1 MXT = $1)</span>
           </div>
         </div>
@@ -389,7 +389,7 @@ export default function LendingPanel({ feedPrices }: Props) {
         {address && (
           <div>
             {/* Tab row */}
-            <div className="flex gap-1 bg-[#0d1117] border border-[#30363d] rounded-xl p-1 mb-3">
+            <div className="flex gap-1 bg-background border border-border rounded-xl p-1 mb-3">
               {TABS.map(t => (
                 <button
                   key={t.key}
@@ -397,7 +397,7 @@ export default function LendingPanel({ feedPrices }: Props) {
                   className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all
                     ${tab === t.key
                       ? "bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow"
-                      : "text-gray-500 hover:text-gray-300"}`}
+                      : "text-muted-foreground hover:text-foreground/80"}`}
                 >
                   {t.label}
                 </button>
@@ -405,12 +405,12 @@ export default function LendingPanel({ feedPrices }: Props) {
             </div>
 
             {/* Input box */}
-            <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-4 hover:border-[#444c56] transition-colors">
+            <div className="bg-background border border-border rounded-xl p-4 hover:border-muted-foreground/40 transition-colors">
               <div className="flex justify-between mb-3">
-                <span className="text-gray-500 text-xs">{activeTab.label} {activeTab.token}</span>
+                <span className="text-muted-foreground text-xs">{activeTab.label} {activeTab.token}</span>
                 {activeTab.balance !== null && (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-gray-500 text-xs">Bal: {activeTab.balance}</span>
+                    <span className="text-muted-foreground text-xs">Bal: {activeTab.balance}</span>
                     {parseFloat(activeTab.balance) > 0 && (
                       <button
                         onClick={() => setAmount(activeTab.balance!)}
@@ -424,7 +424,7 @@ export default function LendingPanel({ feedPrices }: Props) {
                 )}
                 {tab === "borrow" && position && (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-gray-500 text-xs">Max: {position.maxBorrow.toFixed(2)} MXT</span>
+                    <span className="text-muted-foreground text-xs">Max: {position.maxBorrow.toFixed(2)} MXT</span>
                     <button
                       onClick={() => setAmount(position.maxBorrow.toFixed(4))}
                       className="text-violet-400 hover:text-violet-300 text-xs font-medium
@@ -446,7 +446,7 @@ export default function LendingPanel({ feedPrices }: Props) {
                   placeholder="0"
                   disabled={!IS_DEPLOYED}
                   className="flex-1 bg-transparent text-white text-3xl font-light outline-none
-                             placeholder-gray-700 min-w-0
+                             placeholder-muted-foreground/30 min-w-0
                              [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none
                              [&::-webkit-inner-spin-button]:appearance-none
                              disabled:opacity-40"
@@ -462,7 +462,7 @@ export default function LendingPanel({ feedPrices }: Props) {
 
               {/* USD equivalent for WETH inputs */}
               {(tab === "deposit" || tab === "withdraw") && amount && ethPrice && (
-                <p className="text-gray-600 text-xs mt-2">
+                <p className="text-muted-foreground/70 text-xs mt-2">
                   ≈ ${(parseFloat(amount) * ethPrice).toLocaleString("en-US", { maximumFractionDigits: 2 })}
                 </p>
               )}
@@ -507,7 +507,7 @@ export default function LendingPanel({ feedPrices }: Props) {
                          enabled:hover:shadow-violet-900/40
                          bg-gradient-to-r from-violet-600 to-purple-600
                          disabled:from-gray-700 disabled:to-gray-700
-                         disabled:text-gray-400 enabled:text-white"
+                         disabled:text-muted-foreground enabled:text-foreground"
             >
               {approving ? "Approving…"
                 : loading ? `${activeTab.label}ing…`
@@ -518,7 +518,7 @@ export default function LendingPanel({ feedPrices }: Props) {
         )}
 
         {!address && IS_DEPLOYED && (
-          <p className="text-gray-600 text-xs text-center py-2">
+          <p className="text-muted-foreground/70 text-xs text-center py-2">
             Connect your wallet to interact with the lending pool
           </p>
         )}
