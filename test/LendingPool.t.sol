@@ -7,7 +7,6 @@ import "../src/LendingPool.sol";
 
 // ── Minimal mock contracts ────────────────────────────────────────────────────
 
-/// @dev Fake WETH: standard ERC-20 with free mint for testing
 contract MockWETH {
     string public constant name     = "Wrapped Ether";
     string public constant symbol   = "WETH";
@@ -21,8 +20,8 @@ contract MockWETH {
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
     function mint(address to, uint256 amount) external {
-        totalSupply     += amount;
-        balanceOf[to]   += amount;
+        totalSupply   += amount;
+        balanceOf[to] += amount;
         emit Transfer(address(0), to, amount);
     }
 
@@ -51,12 +50,10 @@ contract MockWETH {
     }
 }
 
-/// @dev Fake oracle: returns a configurable ETH price (18-dec USD)
+/// @dev Simple oracle mock: satisfies LendingPool's oracle.getPrice() call
 contract MockOracle {
     uint256 public price;
-
     constructor(uint256 _price) { price = _price; }
-
     function getPrice() external view returns (uint256) { return price; }
     function setPrice(uint256 _price) external          { price = _price; }
 }
@@ -74,29 +71,21 @@ contract LendingPoolTest is Test {
     address bob     = address(0xB0B);
     address charlie = address(0xC14);
 
-    // 1 ETH = $2,000 in 18-dec
-    uint256 constant ETH_PRICE  = 2_000e18;
-    uint256 constant ONE_ETH    = 1e18;
-    uint256 constant PRECISION  = 1e18;
+    uint256 constant ETH_PRICE = 2_000e18; // $2,000
+    uint256 constant ONE_ETH   = 1e18;
+    uint256 constant PRECISION = 1e18;
+
+    // CF=80%, LIQ_THRESHOLD=87%
+    uint256 constant MAX_BORROW_1ETH = 1_600e18; // 80% of $2000
 
     function setUp() public {
         weth       = new MockWETH();
         mxt        = new MXT();
         mockOracle = new MockOracle(ETH_PRICE);
+        pool       = new LendingPool(address(weth), address(mxt), address(mockOracle));
 
-        // Deploy pool with mock oracle address (we use a workaround below)
-        // Because LendingPool takes a PriceOracle address but we have a MockOracle,
-        // we deploy a wrapper that delegates to our mock.
-        pool = new LendingPool(
-            address(weth),
-            address(mxt),
-            address(mockOracle) // works because we call getPrice() via low-level
-        );
+        mxt.grantRole(mxt.MINTER_ROLE(), address(pool));
 
-        // Grant LendingPool minting rights on MXT
-        mxt.setMinter(address(pool));
-
-        // Fund test users with WETH
         weth.mint(alice,   10 * ONE_ETH);
         weth.mint(bob,     10 * ONE_ETH);
         weth.mint(charlie, 10 * ONE_ETH);
@@ -123,7 +112,7 @@ contract LendingPoolTest is Test {
         vm.stopPrank();
     }
 
-    // ── Deposit tests ─────────────────────────────────────────────────────────
+    // ── Deposit ───────────────────────────────────────────────────────────────
 
     function test_deposit_transfersWETH() public {
         _deposit(alice, ONE_ETH);
@@ -144,46 +133,45 @@ contract LendingPoolTest is Test {
         assertEq(pool.totalCollateral(), 3 * ONE_ETH);
     }
 
-    // ── Withdraw tests ────────────────────────────────────────────────────────
+    // ── Withdraw ──────────────────────────────────────────────────────────────
 
     function test_withdraw_noDebt() public {
         _deposit(alice, ONE_ETH);
         vm.prank(alice);
         pool.withdraw(ONE_ETH);
-        assertEq(weth.balanceOf(alice), 10 * ONE_ETH); // back to start
+        assertEq(weth.balanceOf(alice), 10 * ONE_ETH);
     }
 
     function test_withdraw_revertsIfUnhealthy() public {
-        // Deposit 1 ETH ($2000), borrow $1400 (70% LTV < 75% limit)
         _deposit(alice, ONE_ETH);
-        _borrow(alice, 1_400e18);
+        _borrow(alice, 1_400e18); // $1400 < $1600 max, healthy
 
-        // Try to withdraw 0.5 ETH → remaining collateral $1000, debt $1400 → unhealthy
+        // Withdrawing 0.5 ETH leaves $1000 collateral, $1400 debt → unhealthy
         vm.prank(alice);
         vm.expectRevert("LP: unhealthy after withdraw");
         pool.withdraw(ONE_ETH / 2);
     }
 
-    // ── Borrow tests ──────────────────────────────────────────────────────────
+    // ── Borrow ────────────────────────────────────────────────────────────────
 
     function test_borrow_mintsMXT() public {
         _deposit(alice, ONE_ETH);
-        _borrow(alice, 1_000e18); // borrow $1000 MXT
+        _borrow(alice, 1_000e18);
         assertEq(mxt.balanceOf(alice), 1_000e18);
     }
 
     function test_borrow_maxAtCollateralFactor() public {
-        // 1 ETH = $2000, CF = 75% → max borrow = $1500
+        // CF=80%: max borrow on 1 ETH @ $2000 = $1600
         _deposit(alice, ONE_ETH);
-        _borrow(alice, 1_500e18);
-        assertEq(mxt.balanceOf(alice), 1_500e18);
+        _borrow(alice, MAX_BORROW_1ETH);
+        assertEq(mxt.balanceOf(alice), MAX_BORROW_1ETH);
     }
 
     function test_borrow_revertsAboveCollateralFactor() public {
         _deposit(alice, ONE_ETH);
         vm.prank(alice);
         vm.expectRevert("LP: undercollateralised");
-        pool.borrow(1_501e18); // 1 wei over max
+        pool.borrow(MAX_BORROW_1ETH + 1);
     }
 
     function test_borrow_revertsWithNoCollateral() public {
@@ -194,22 +182,17 @@ contract LendingPoolTest is Test {
 
     function test_healthFactor_noDebt() public {
         _deposit(alice, ONE_ETH);
-        // No debt → max uint256
         assertEq(pool.getHealthFactor(alice), type(uint256).max);
     }
 
-    function test_healthFactor_atLiquidationThreshold() public {
-        // Deposit 1 ETH ($2000), borrow up to liquidation threshold
-        // health = (collateralUSD * 80%) / debtUSD = 1.0
-        // debtUSD = collateralUSD * 80% = $1600
+    function test_healthFactor_atMaxBorrow() public {
+        // Borrow at CF limit: health = (2000 * 87%) / 1600 = 1740/1600 = 1.0875 > 1.0
         _deposit(alice, ONE_ETH);
-        _borrow(alice, 1_500e18); // borrow at CF limit (75%)
-        uint256 hf = pool.getHealthFactor(alice);
-        // health = (2000 * 80%) / 1500 = 1600/1500 ≈ 1.066 > 1.0
-        assertGt(hf, PRECISION);
+        _borrow(alice, MAX_BORROW_1ETH);
+        assertGt(pool.getHealthFactor(alice), PRECISION);
     }
 
-    // ── Repay tests ───────────────────────────────────────────────────────────
+    // ── Repay ─────────────────────────────────────────────────────────────────
 
     function test_repay_reducesDebt() public {
         _deposit(alice, ONE_ETH);
@@ -221,98 +204,178 @@ contract LendingPoolTest is Test {
     function test_repay_fullDebt_clearsPosition() public {
         _deposit(alice, ONE_ETH);
         _borrow(alice, 500e18);
-        // Mint extra MXT to alice to cover any accrued interest
         vm.prank(address(pool));
-        mxt.mint(alice, 10e18);
-        _repay(alice, 510e18); // repay more than borrowed → capped
+        mxt.mint(alice, 10e18); // cover accrued interest
+        _repay(alice, 510e18);
         assertEq(pool.getDebt(alice), 0);
     }
 
-    // ── Interest accrual ──────────────────────────────────────────────────────
+    // ── Interest ──────────────────────────────────────────────────────────────
 
     function test_interestAccrues_overTime() public {
         _deposit(alice, ONE_ETH);
         _borrow(alice, 1_000e18);
 
-        uint256 debtNow = pool.getDebt(alice);
-
-        // Warp 1 year forward
         vm.warp(block.timestamp + 365 days);
 
         uint256 debtLater = pool.getDebt(alice);
-
-        // Should be ~5% more (~$1050)
-        assertGt(debtLater, debtNow);
-        // Within 0.1% of expected 5% APR
-        uint256 expected = 1_050e18;
-        assertApproxEqRel(debtLater, expected, 0.001e18);
+        assertApproxEqRel(debtLater, 1_050e18, 0.001e18); // ~5% APR
     }
 
-    // ── Liquidation tests ─────────────────────────────────────────────────────
+    // ── Liquidation ───────────────────────────────────────────────────────────
 
     function test_liquidate_revertsIfHealthy() public {
         _deposit(alice, ONE_ETH);
         _borrow(alice, 1_000e18);
         vm.prank(bob);
         vm.expectRevert("LP: position healthy");
-        pool.liquidate(alice);
+        pool.liquidate(alice, 500e18);
     }
 
-    function test_liquidate_happyPath() public {
-        // Alice deposits 1 ETH ($2000), borrows $1500 (at CF limit)
+    function test_liquidate_revertsOnSelf() public {
         _deposit(alice, ONE_ETH);
-        _borrow(alice, 1_500e18);
-
-        // Price drops: 1 ETH = $1700
-        // collateralUSD = $1700, debtUSD = $1500
-        // health = (1700 * 80%) / 1500 = 1360/1500 = 0.906 < 1.0
+        _borrow(alice, MAX_BORROW_1ETH);
         mockOracle.setPrice(1_700e18);
-
-        assertLt(pool.getHealthFactor(alice), PRECISION);
-
-        // Bob is the liquidator — needs MXT to repay alice's debt
-        weth.mint(bob, 0); // bob already has WETH
-        vm.startPrank(bob);
-        // Bob needs MXT — deposit his own collateral and borrow to get MXT
-        weth.approve(address(pool), 5 * ONE_ETH);
-        pool.deposit(5 * ONE_ETH);
-        pool.borrow(1_500e18); // get MXT
-
-        uint256 wethBefore = weth.balanceOf(bob);
-
-        mxt.approve(address(pool), 1_500e18);
-        pool.liquidate(alice);
-        vm.stopPrank();
-
-        uint256 wethAfter = weth.balanceOf(bob);
-
-        // Bob received collateral
-        assertGt(wethAfter, wethBefore);
-
-        // Alice's debt is cleared
-        assertEq(pool.getDebt(alice), 0);
-    }
-
-    function test_liquidate_selfLiquidateReverts() public {
-        _deposit(alice, ONE_ETH);
-        _borrow(alice, 1_500e18);
-        mockOracle.setPrice(1_700e18);
-
         vm.prank(alice);
         vm.expectRevert("LP: self-liquidate");
-        pool.liquidate(alice);
+        pool.liquidate(alice, 800e18);
+    }
+
+    function test_liquidate_happyPath_partial() public {
+        // Alice: 1 ETH @ $2000, borrows $1600 (max CF)
+        _deposit(alice, ONE_ETH);
+        _borrow(alice, MAX_BORROW_1ETH);
+
+        // Price drops to $1700: health = (1700 * 87%) / 1600 = 0.924 < 1.0
+        mockOracle.setPrice(1_700e18);
+        assertLt(pool.getHealthFactor(alice), PRECISION);
+
+        // Bob gets MXT to liquidate
+        vm.startPrank(bob);
+        weth.approve(address(pool), 5 * ONE_ETH);
+        pool.deposit(5 * ONE_ETH);
+        pool.borrow(2_000e18);
+
+        uint256 aliceDebt  = pool.getDebt(alice);
+        uint256 repayAmt   = aliceDebt / 2; // 50% — exactly at close factor
+
+        mxt.approve(address(pool), repayAmt);
+        uint256 wethBefore = weth.balanceOf(bob);
+        pool.liquidate(alice, repayAmt);
+        vm.stopPrank();
+
+        // Bob received WETH collateral + bonus
+        assertGt(weth.balanceOf(bob), wethBefore);
+
+        // Alice still has remaining debt (partial liquidation)
+        assertGt(pool.getDebt(alice), 0);
+    }
+
+    function test_liquidate_revertsExceedsCloseFactor() public {
+        _deposit(alice, ONE_ETH);
+        _borrow(alice, MAX_BORROW_1ETH);
+        mockOracle.setPrice(1_700e18);
+
+        vm.startPrank(bob);
+        weth.approve(address(pool), 5 * ONE_ETH);
+        pool.deposit(5 * ONE_ETH);
+        pool.borrow(2_000e18);
+        mxt.approve(address(pool), 2_000e18);
+
+        uint256 aliceDebt = pool.getDebt(alice);
+        vm.expectRevert("LP: exceeds close factor");
+        pool.liquidate(alice, aliceDebt); // 100% — should revert, max is 50%
+        vm.stopPrank();
+    }
+
+    // Fix 2: accrued interest is included in the health check during liquidation
+    function test_liquidate_accruesInterestBeforeHealthCheck() public {
+        _deposit(alice, ONE_ETH);
+        _borrow(alice, MAX_BORROW_1ETH);
+
+        // Warp time so interest pushes the position below threshold
+        // At $2000 ETH, health = (2000 * 87%) / debt
+        // Need debt > 2000 * 87% = 1740 for health < 1
+        // Debt starts at $1600 → needs to grow to $1740+ → ~8.75% growth → ~1.75 years
+        vm.warp(block.timestamp + 2 * 365 days);
+
+        // Health check via view (reflects accrued interest)
+        assertLt(pool.getHealthFactor(alice), PRECISION);
+
+        vm.startPrank(bob);
+        weth.approve(address(pool), 5 * ONE_ETH);
+        pool.deposit(5 * ONE_ETH);
+        pool.borrow(2_000e18);
+
+        uint256 aliceDebt = pool.getDebt(alice);
+        uint256 repayAmt  = aliceDebt / 2;
+        mxt.approve(address(pool), repayAmt);
+        pool.liquidate(alice, repayAmt); // must not revert
+        vm.stopPrank();
+    }
+
+    // ── Supply / borrow caps (Fix 5) ──────────────────────────────────────────
+
+    function test_caps_blockDeposit() public {
+        pool.setCaps(ONE_ETH / 2, type(uint256).max); // cap at 0.5 ETH
+        vm.startPrank(alice);
+        weth.approve(address(pool), ONE_ETH);
+        vm.expectRevert("LP: supply cap reached");
+        pool.deposit(ONE_ETH);
+        vm.stopPrank();
+    }
+
+    function test_caps_blockBorrow() public {
+        pool.setCaps(type(uint256).max, 100e18); // borrow cap $100
+        _deposit(alice, ONE_ETH);
+        vm.prank(alice);
+        vm.expectRevert("LP: borrow cap reached");
+        pool.borrow(200e18);
+    }
+
+    // ── Pause (Fix 4) ─────────────────────────────────────────────────────────
+
+    function test_pause_blocksDepositAndBorrow() public {
+        pool.pause();
+
+        vm.startPrank(alice);
+        weth.approve(address(pool), ONE_ETH);
+        vm.expectRevert();
+        pool.deposit(ONE_ETH);
+        vm.stopPrank();
+    }
+
+    function test_pause_allowsWithdrawAndRepay() public {
+        _deposit(alice, ONE_ETH);
+        _borrow(alice, 500e18);
+
+        pool.pause();
+
+        // Withdraw allowed while paused
+        vm.prank(alice);
+        pool.withdraw(ONE_ETH / 4);
+
+        // Repay allowed while paused
+        _repay(alice, 200e18);
+    }
+
+    function test_unpause_restoresDeposit() public {
+        pool.pause();
+        pool.unpause();
+
+        _deposit(alice, ONE_ETH); // should succeed
+        assertEq(pool.totalCollateral(), ONE_ETH);
     }
 
     // ── getMaxBorrow ──────────────────────────────────────────────────────────
 
     function test_getMaxBorrow() public {
         _deposit(alice, ONE_ETH);
-        // 1 ETH @ $2000, CF 75% → max = $1500
-        assertEq(pool.getMaxBorrow(alice), 1_500e18);
+        // CF=80%: max = $1600
+        assertEq(pool.getMaxBorrow(alice), MAX_BORROW_1ETH);
 
         _borrow(alice, 500e18);
-        // Remaining ≈ $1000 (minus tiny interest since same block)
-        assertApproxEqAbs(pool.getMaxBorrow(alice), 1_000e18, 1e15);
+        assertApproxEqAbs(pool.getMaxBorrow(alice), 1_100e18, 1e15);
     }
 
     // ── getPositionSummary ────────────────────────────────────────────────────
@@ -332,9 +395,10 @@ contract LendingPoolTest is Test {
 
         assertEq(collateral, ONE_ETH);
         assertEq(debt, 1_000e18);
-        assertEq(collateralValueUSD, 2_000e18); // 1 ETH @ $2000
-        assertEq(debtValueUSD, 1_000e18);       // 1 MXT = $1
-        assertGt(healthFactor, PRECISION);      // > 1.0
-        assertApproxEqAbs(maxBorrow, 500e18, 1e15); // 75% of $2000 - $1000 = $500
+        assertEq(collateralValueUSD, 2_000e18);
+        assertEq(debtValueUSD, 1_000e18);
+        assertGt(healthFactor, PRECISION);
+        // CF=80%: max debt = $1600, current = $1000 → remaining = $600
+        assertApproxEqAbs(maxBorrow, 600e18, 1e15);
     }
 }

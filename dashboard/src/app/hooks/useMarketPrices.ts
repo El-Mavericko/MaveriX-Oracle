@@ -34,17 +34,25 @@ export function useMarketPrices(
       setLastUpdated(new Date());
 
       const ethOracle = feedPricesRef.current["eth"];
+      const btcOracle = feedPricesRef.current["btc"];
       const ethMarket = prices["ethereum"];
+      const btcMarket = prices["bitcoin"];
+
       if (ethOracle && ethMarket) {
-        const deviation = ((ethOracle.price - ethMarket) / ethMarket) * 100;
+        const ethDev = ((ethOracle.price - ethMarket) / ethMarket) * 100;
+        const btcDev = btcOracle && btcMarket
+          ? ((btcOracle.price - btcMarket) / btcMarket) * 100
+          : undefined;
+
         setDeviationHistory(prev =>
           [
             ...prev,
             {
-              time:        new Date().toLocaleTimeString(),
-              oraclePrice: parseFloat(ethOracle.price.toFixed(2)),
-              marketPrice: parseFloat(ethMarket.toFixed(2)),
-              deviation:   parseFloat(deviation.toFixed(4)),
+              time:         new Date().toLocaleTimeString(),
+              oraclePrice:  parseFloat(ethOracle.price.toFixed(2)),
+              marketPrice:  parseFloat(ethMarket.toFixed(2)),
+              deviation:    parseFloat(ethDev.toFixed(4)),
+              btcDeviation: btcDev !== undefined ? parseFloat(btcDev.toFixed(4)) : undefined,
             },
           ].slice(-DEVIATION_HISTORY_MAX)
         );

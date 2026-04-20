@@ -1,41 +1,47 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./MXT.sol";
 import "./PriceOracle.sol";
-
-interface IERC20 {
-    function balanceOf(address) external view returns (uint256);
-    function transfer(address to, uint256 amount) external returns (bool);
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-}
 
 /// @title MaveriX LendingPool
 /// @notice Deposit WETH as collateral, borrow MXT (synthetic dollar) against it.
 ///         Health factor = (collateralUSD * LIQ_THRESHOLD) / debtUSD
 ///         If health < 1.0 the position can be liquidated.
-contract LendingPool {
+contract LendingPool is ReentrancyGuard, Pausable, Ownable {
+    using SafeERC20 for IERC20;
 
     // ── Protocol parameters ───────────────────────────────────────────────────
 
-    /// Maximum LTV before new borrows are blocked (75%)
-    uint256 public constant COLLATERAL_FACTOR    = 75;
-    /// LTV at which a position becomes liquidatable (80%)
-    uint256 public constant LIQUIDATION_THRESHOLD = 80;
+    /// Maximum LTV before new borrows are blocked (80%)
+    uint256 public constant COLLATERAL_FACTOR     = 80;
+    /// LTV at which a position becomes liquidatable (87%)
+    uint256 public constant LIQUIDATION_THRESHOLD = 87;
     /// Extra collateral bonus paid to liquidators (10%)
-    uint256 public constant LIQUIDATION_BONUS    = 10;
+    uint256 public constant LIQUIDATION_BONUS     = 10;
+    /// Fix 6: max fraction of a position's debt that can be repaid in one liquidation (50%)
+    uint256 public constant CLOSE_FACTOR          = 50;
     /// 5% APR expressed as per-second multiplier in 1e18 precision
-    /// = 0.05 / 31_536_000 * 1e18  ≈ 1_585_489_599
     uint256 public constant INTEREST_RATE_PER_SEC = 1_585_489_599;
 
-    uint256 private constant PRECISION = 1e18;
-    uint256 private constant HEALTH_OK = 1e18; // 1.0 in 18-dec
+    uint256 private constant PRECISION  = 1e18;
+    uint256 private constant HEALTH_OK  = 1e18;
 
     // ── Immutables ────────────────────────────────────────────────────────────
 
     IERC20      public immutable weth;
     MXT         public immutable mxt;
     PriceOracle public immutable oracle;
+
+    // ── Fix 5: supply / borrow caps (owner-settable) ──────────────────────────
+
+    uint256 public maxTotalCollateral;
+    uint256 public maxTotalBorrow;
 
     // ── State ─────────────────────────────────────────────────────────────────
 
@@ -47,11 +53,8 @@ contract LendingPool {
 
     mapping(address => Position) public positions;
 
-    uint256 public totalCollateral; // protocol-wide WETH deposited
-    uint256 public totalBorrowed;   // protocol-wide MXT borrowed (principal)
-
-    /// @dev Reentrancy lock: 1 = unlocked, 2 = locked
-    uint256 private _locked = 1;
+    uint256 public totalCollateral;
+    uint256 public totalBorrowed;
 
     // ── Events ────────────────────────────────────────────────────────────────
 
@@ -65,33 +68,46 @@ contract LendingPool {
         uint256 debtRepaid,
         uint256 collateralSeized
     );
-
-    // ── Reentrancy guard ──────────────────────────────────────────────────────
-
-    modifier nonReentrant() {
-        require(_locked == 1, "LP: reentrant call");
-        _locked = 2;
-        _;
-        _locked = 1;
-    }
+    event CapsUpdated(uint256 maxCollateral, uint256 maxBorrow);
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
-    constructor(address _weth, address _mxt, address _oracle) {
+    constructor(address _weth, address _mxt, address _oracle)
+        Ownable(msg.sender)
+    {
         require(_weth   != address(0), "LP: zero weth");
         require(_mxt    != address(0), "LP: zero mxt");
         require(_oracle != address(0), "LP: zero oracle");
         weth   = IERC20(_weth);
         mxt    = MXT(_mxt);
         oracle = PriceOracle(_oracle);
+
+        // Default: uncapped — owner should set meaningful limits post-deploy
+        maxTotalCollateral = type(uint256).max;
+        maxTotalBorrow     = type(uint256).max;
+    }
+
+    // ── Owner controls ────────────────────────────────────────────────────────
+
+    /// Fix 4: emergency pause — blocks deposit and borrow; withdraw/repay/liquidate remain open
+    function pause()   external onlyOwner { _pause(); }
+    function unpause() external onlyOwner { _unpause(); }
+
+    /// Fix 5: update protocol-wide supply and borrow caps
+    function setCaps(uint256 _maxCollateral, uint256 _maxBorrow) external onlyOwner {
+        maxTotalCollateral = _maxCollateral;
+        maxTotalBorrow     = _maxBorrow;
+        emit CapsUpdated(_maxCollateral, _maxBorrow);
     }
 
     // ── Core protocol ─────────────────────────────────────────────────────────
 
-    /// @notice Deposit WETH as collateral.
-    function deposit(uint256 amount) external nonReentrant {
+    function deposit(uint256 amount) external nonReentrant whenNotPaused {
         require(amount > 0, "LP: zero amount");
-        weth.transferFrom(msg.sender, address(this), amount);
+        // Fix 5: supply cap
+        require(totalCollateral + amount <= maxTotalCollateral, "LP: supply cap reached");
+
+        weth.safeTransferFrom(msg.sender, address(this), amount);
         positions[msg.sender].collateral += amount;
         if (positions[msg.sender].lastUpdated == 0) {
             positions[msg.sender].lastUpdated = block.timestamp;
@@ -100,7 +116,6 @@ contract LendingPool {
         emit Deposited(msg.sender, amount);
     }
 
-    /// @notice Withdraw WETH collateral (must remain healthy after).
     function withdraw(uint256 amount) external nonReentrant {
         Position storage pos = positions[msg.sender];
         require(amount > 0,               "LP: zero amount");
@@ -108,30 +123,30 @@ contract LendingPool {
 
         _accrueInterest(msg.sender);
 
-        pos.collateral -= amount;
+        pos.collateral  -= amount;
         totalCollateral -= amount;
 
-        // Health check after removal
         if (pos.borrowed > 0) {
             require(_healthFactor(msg.sender) >= HEALTH_OK, "LP: unhealthy after withdraw");
         }
 
-        weth.transfer(msg.sender, amount);
+        weth.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
     }
 
-    /// @notice Borrow MXT against deposited WETH collateral.
-    function borrow(uint256 amount) external nonReentrant {
+    function borrow(uint256 amount) external nonReentrant whenNotPaused {
         require(amount > 0, "LP: zero amount");
         Position storage pos = positions[msg.sender];
         require(pos.collateral > 0, "LP: no collateral");
 
         _accrueInterest(msg.sender);
 
-        // New debt must not exceed COLLATERAL_FACTOR of collateral value
-        uint256 newDebt      = pos.borrowed + amount;
+        uint256 newDebt       = pos.borrowed + amount;
         uint256 maxBorrowable = (_collateralValue(msg.sender) * COLLATERAL_FACTOR) / 100;
         require(newDebt <= maxBorrowable, "LP: undercollateralised");
+
+        // Fix 5: borrow cap
+        require(totalBorrowed + amount <= maxTotalBorrow, "LP: borrow cap reached");
 
         pos.borrowed  += amount;
         totalBorrowed += amount;
@@ -140,8 +155,6 @@ contract LendingPool {
         emit Borrowed(msg.sender, amount);
     }
 
-    /// @notice Repay MXT debt (full or partial).
-    ///         Caller must have approved this contract to spend MXT.
     function repay(uint256 amount) external nonReentrant {
         require(amount > 0, "LP: zero amount");
         Position storage pos = positions[msg.sender];
@@ -151,13 +164,10 @@ contract LendingPool {
 
         uint256 totalDebt = pos.borrowed;
         uint256 repayAmt  = amount > totalDebt ? totalDebt : amount;
-        uint256 interest  = repayAmt > pos.borrowed
-            ? repayAmt - pos.borrowed // accrued portion
-            : 0;
+        uint256 interest  = repayAmt > pos.borrowed ? repayAmt - pos.borrowed : 0;
 
-        // Pull MXT from caller and burn it
-        mxt.transferFrom(msg.sender, address(this), repayAmt);
-        mxt.burn(address(this), repayAmt);
+        IERC20(address(mxt)).safeTransferFrom(msg.sender, address(this), repayAmt);
+        mxt.burn(repayAmt);
 
         uint256 principalRepaid = repayAmt > interest ? repayAmt - interest : 0;
         pos.borrowed   = pos.borrowed > principalRepaid ? pos.borrowed - principalRepaid : 0;
@@ -166,63 +176,67 @@ contract LendingPool {
         emit Repaid(msg.sender, repayAmt, interest);
     }
 
-    /// @notice Liquidate an unhealthy position.
-    ///         Liquidator repays the full MXT debt and receives WETH
-    ///         collateral + 10% bonus.
-    function liquidate(address borrower) external nonReentrant {
+    /// @notice Partially liquidate an unhealthy position.
+    ///         Liquidator repays up to CLOSE_FACTOR% of the debt and receives
+    ///         the equivalent WETH collateral plus a 10% bonus.
+    /// @param borrower    Address of the position to liquidate.
+    /// @param debtToRepay Amount of MXT debt to repay (must be <= 50% of total debt).
+    function liquidate(address borrower, uint256 debtToRepay) external nonReentrant {
         require(borrower != msg.sender, "LP: self-liquidate");
-        require(_healthFactor(borrower) < HEALTH_OK, "LP: position healthy");
+        require(debtToRepay > 0,        "LP: zero repay");
 
+        // Fix 2: accrue interest BEFORE the health check so the check reflects
+        //        the true current debt (including unpaid interest).
         _accrueInterest(borrower);
 
-        Position storage pos = positions[borrower];
-        uint256 debt = pos.borrowed;
-        require(debt > 0, "LP: no debt");
+        require(_healthFactor(borrower) < HEALTH_OK, "LP: position healthy");
 
-        // Value of debt in ETH terms (1 MXT = $1)
-        uint256 ethPrice       = oracle.getPrice(); // 18-dec USD per ETH
-        uint256 debtInEth      = (debt * PRECISION) / ethPrice;
-        uint256 bonusCollateral = (debtInEth * LIQUIDATION_BONUS) / 100;
+        Position storage pos = positions[borrower];
+        uint256 totalDebt = pos.borrowed;
+        require(totalDebt > 0, "LP: no debt");
+
+        // Fix 6: close factor — cap repayment at 50% of current debt per call.
+        //        Partial liquidation keeps borrowers solvent gradually and prevents
+        //        liquidators from extracting the full bonus on large positions at once.
+        uint256 maxRepay = (totalDebt * CLOSE_FACTOR) / 100;
+        require(debtToRepay <= maxRepay, "LP: exceeds close factor");
+
+        uint256 ethPrice         = oracle.getPrice();
+        uint256 debtInEth        = (debtToRepay * PRECISION) / ethPrice;
+        uint256 bonusCollateral  = (debtInEth * LIQUIDATION_BONUS) / 100;
         uint256 collateralSeized = debtInEth + bonusCollateral;
 
-        // Cap seizure at available collateral
         if (collateralSeized > pos.collateral) {
             collateralSeized = pos.collateral;
         }
 
-        // Liquidator burns the debt
-        mxt.transferFrom(msg.sender, address(this), debt);
-        mxt.burn(address(this), debt);
+        IERC20(address(mxt)).safeTransferFrom(msg.sender, address(this), debtToRepay);
+        mxt.burn(debtToRepay);
 
-        // Transfer collateral to liquidator
         pos.collateral  -= collateralSeized;
         totalCollateral -= collateralSeized;
-        totalBorrowed   = totalBorrowed > debt ? totalBorrowed - debt : 0;
-        pos.borrowed    = 0;
+        totalBorrowed    = totalBorrowed > debtToRepay ? totalBorrowed - debtToRepay : 0;
+        pos.borrowed     = pos.borrowed  > debtToRepay ? pos.borrowed  - debtToRepay : 0;
 
-        weth.transfer(msg.sender, collateralSeized);
+        weth.safeTransfer(msg.sender, collateralSeized);
 
-        emit Liquidated(msg.sender, borrower, debt, collateralSeized);
+        emit Liquidated(msg.sender, borrower, debtToRepay, collateralSeized);
     }
 
     // ── View helpers ──────────────────────────────────────────────────────────
 
-    /// @notice Health factor in 1e18 precision. Values < 1e18 are liquidatable.
     function getHealthFactor(address user) external view returns (uint256) {
         return _healthFactor(user);
     }
 
-    /// @notice Current total debt (principal + accrued interest) in MXT (18 dec).
     function getDebt(address user) external view returns (uint256) {
         return _currentDebt(user);
     }
 
-    /// @notice USD value of deposited collateral in 18-dec precision.
     function getCollateralValue(address user) external view returns (uint256) {
         return _collateralValue(user);
     }
 
-    /// @notice Max additional MXT the user can borrow right now.
     function getMaxBorrow(address user) external view returns (uint256) {
         uint256 collUSD  = _collateralValue(user);
         uint256 maxDebt  = (collUSD * COLLATERAL_FACTOR) / 100;
@@ -230,7 +244,6 @@ contract LendingPool {
         return maxDebt > currDebt ? maxDebt - currDebt : 0;
     }
 
-    /// @notice Convenience: returns position + computed health in one call.
     function getPositionSummary(address user)
         external
         view
@@ -243,13 +256,13 @@ contract LendingPool {
             uint256 maxBorrow
         )
     {
-        collateral        = positions[user].collateral;
-        debt              = _currentDebt(user);
+        collateral         = positions[user].collateral;
+        debt               = _currentDebt(user);
         collateralValueUSD = _collateralValue(user);
-        debtValueUSD      = debt; // 1 MXT = $1 in 18-dec
-        healthFactor      = _healthFactor(user);
-        uint256 maxDebt   = (collateralValueUSD * COLLATERAL_FACTOR) / 100;
-        maxBorrow         = maxDebt > debt ? maxDebt - debt : 0;
+        debtValueUSD       = debt;
+        healthFactor       = _healthFactor(user);
+        uint256 maxDebt    = (collateralValueUSD * COLLATERAL_FACTOR) / 100;
+        maxBorrow          = maxDebt > debt ? maxDebt - debt : 0;
     }
 
     // ── Internal ──────────────────────────────────────────────────────────────
@@ -268,7 +281,7 @@ contract LendingPool {
     }
 
     function _currentDebt(address user) internal view returns (uint256) {
-        Position storage pos = positions[user];
+        Position memory pos = positions[user];
         if (pos.borrowed == 0) return 0;
         uint256 elapsed  = block.timestamp - pos.lastUpdated;
         uint256 interest = (pos.borrowed * INTEREST_RATE_PER_SEC * elapsed) / PRECISION;
@@ -276,17 +289,14 @@ contract LendingPool {
     }
 
     function _collateralValue(address user) internal view returns (uint256) {
-        // ethPrice: 18-dec USD per 1 ETH
-        // collateral: 18-dec ETH amount
-        // result: 18-dec USD
-        return (positions[user].collateral * oracle.getPrice()) / PRECISION;
+        Position memory pos = positions[user];
+        return (pos.collateral * oracle.getPrice()) / PRECISION;
     }
 
     function _healthFactor(address user) internal view returns (uint256) {
         uint256 debt = _currentDebt(user);
-        if (debt == 0) return type(uint256).max; // no debt → perfectly healthy
+        if (debt == 0) return type(uint256).max;
         uint256 collUSD = _collateralValue(user);
-        // health = (collUSD * LIQ_THRESHOLD / 100) / debtUSD
         return (collUSD * LIQUIDATION_THRESHOLD * PRECISION) / (debt * 100);
     }
 }

@@ -9,6 +9,9 @@ import OracleHealthPanel from "../../components/OracleHealthPanel";
 import MultiFeedGrid from "../../components/MultiFeedGrid";
 import DeviationChart from "../../components/DeviationChart";
 import PriceAlerts from "../../components/PriceAlerts";
+import OracleDeviationAlerts from "../../components/OracleDeviationAlerts";
+import OracleComparisonPanel from "../../components/OracleComparisonPanel";
+import PositionRiskCalculator from "../../components/PositionRiskCalculator";
 import EventLog from "../../components/EventLog";
 import NetworkMonitor from "../../components/NetworkMonitor";
 import RoundExplorer from "../../components/RoundExplorer";
@@ -30,9 +33,17 @@ export default function Dashboard() {
     alerts,
     addAlert,
     removeAlert,
+    deviationAlerts,
+    addDeviationAlert,
+    removeDeviationAlert,
+    resetDeviationAlert,
+    comparisonSnapshots,
+    comparisonHistory,
+    aavePosition,
+    aaveLoading,
     networkConfig,
   } = useOracle();
-  const { address, connect, chainId } = useWeb3();
+  const { address, connect, disconnect, walletName, chainId } = useWeb3();
 
   const explorerBase = chainId === 1
     ? "https://etherscan.io"
@@ -51,17 +62,27 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground mt-1 tracking-widest uppercase">Live Chainlink Data Dashboard</p>
           </div>
           <div className="flex gap-3 items-center">
-            {address && (
-              <span className="text-sm text-muted-foreground bg-card border border-border px-3 py-1.5 rounded font-mono">
-                {address.slice(0, 6)}...{address.slice(-4)}
-              </span>
+            {address ? (
+              <>
+                <span className="text-sm text-muted-foreground bg-card border border-border px-3 py-1.5 rounded font-mono">
+                  {walletName && <span className="text-blue-400 mr-2">{walletName}</span>}
+                  {address.slice(0, 6)}...{address.slice(-4)}
+                </span>
+                <button
+                  onClick={disconnect}
+                  className="border border-border hover:border-red-500 hover:text-red-400 transition-colors px-4 py-2 rounded text-sm font-medium text-muted-foreground"
+                >
+                  Disconnect
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={connect}
+                className="bg-blue-600 hover:bg-blue-500 transition-colors px-4 py-2 rounded text-sm font-medium"
+              >
+                Connect Wallet
+              </button>
             )}
-            <button
-              onClick={connect}
-              className="bg-blue-600 hover:bg-blue-500 transition-colors px-4 py-2 rounded text-sm font-medium"
-            >
-              {address ? "Connected" : "Connect Wallet"}
-            </button>
           </div>
         </div>
 
@@ -113,6 +134,20 @@ export default function Dashboard() {
         {/* DEVIATION HISTORY */}
         <DeviationChart history={deviationHistory} />
 
+        {/* ORACLE SOURCE COMPARISON */}
+        <OracleComparisonPanel
+          snapshots={comparisonSnapshots}
+          history={comparisonHistory}
+        />
+
+        {/* POSITION RISK CALCULATOR */}
+        <PositionRiskCalculator
+          feedPrices={feedPrices}
+          aavePosition={aavePosition}
+          aaveLoading={aaveLoading}
+          walletConnected={!!address}
+        />
+
         {/* SWAP + LENDING */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <SwapPanel feedPrices={feedPrices} />
@@ -128,6 +163,17 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <PriceAlerts alerts={alerts} onAdd={addAlert} onRemove={removeAlert} />
           <EventLog entries={eventLog} />
+        </div>
+
+        {/* ORACLE DEVIATION ALERTS */}
+        <div className="mb-6">
+          <OracleDeviationAlerts
+            alerts={deviationAlerts}
+            feeds={networkConfig.feeds}
+            onAdd={addDeviationAlert}
+            onRemove={removeDeviationAlert}
+            onReset={resetDeviationAlert}
+          />
         </div>
 
         {/* ROUND EXPLORER */}
