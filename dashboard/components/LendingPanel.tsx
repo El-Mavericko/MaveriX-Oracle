@@ -7,9 +7,9 @@ import type { FeedPrice } from "@/src/app/types";
 
 // ── Contract Addresses (fill in after deployment) ─────────────────────────────
 
-const LENDING_POOL_ADDRESS = "0x01baa4911c9c9D5b8bBF231508156E78dF7dAD68";
-const MXT_ADDRESS          = "0x8Bd57b99016249c0C5d32030ab2ee370348003AD";
-const WETH_ADDRESS         = "0xdd13E55209Fd76AfE204dBda4007C227904f0a81"; // Sepolia WETH
+const LENDING_POOL_ADDRESS = "0x90C2D9B57324D5e3b1d989dF53B2429FA8913f79";
+const MXT_ADDRESS          = "0x8C7C44228e798ECA2C5b1867867362be87e38AF5";
+const WETH_ADDRESS         = "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9"; // WETH9 Sepolia — supports deposit() payable
 
 const IS_DEPLOYED = (LENDING_POOL_ADDRESS as string) !== "0x0000000000000000000000000000000000000000";
 
@@ -27,6 +27,11 @@ const ERC20_ABI = [
   "function approve(address spender, uint256 amount) external returns (bool)",
   "function allowance(address owner, address spender) external view returns (uint256)",
   "function balanceOf(address owner) external view returns (uint256)",
+];
+
+const WETH_WRAP_ABI = [
+  ...ERC20_ABI,
+  "function deposit() external payable",
 ];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -77,6 +82,7 @@ export default function LendingPanel({ feedPrices }: Props) {
   const [tab,          setTab]         = useState<ActionTab>("deposit");
   const [amount,       setAmount]      = useState("");
   const [position,     setPosition]    = useState<Position | null>(null);
+  const [ethBal,       setEthBal]      = useState<string | null>(null);
   const [wethBal,      setWethBal]     = useState<string | null>(null);
   const [mxtBal,       setMxtBal]      = useState<string | null>(null);
   const [loading,      setLoading]     = useState(false);
@@ -119,8 +125,11 @@ export default function LendingPanel({ feedPrices }: Props) {
     if (!address) return;
     const p = provider ?? new ethers.JsonRpcProvider("https://rpc.sepolia.org");
     try {
-      const weth = new ethers.Contract(WETH_ADDRESS, ERC20_ABI, p);
-      const wRaw = await weth.balanceOf(address) as bigint;
+      const [ethRaw, wRaw] = await Promise.all([
+        p.getBalance(address),
+        (new ethers.Contract(WETH_ADDRESS, ERC20_ABI, p)).balanceOf(address) as Promise<bigint>,
+      ]);
+      setEthBal(parseFloat(ethers.formatEther(ethRaw)).toFixed(4));
       setWethBal(parseFloat(ethers.formatEther(wRaw)).toFixed(4));
 
       if ((MXT_ADDRESS as string) !== "0x0000000000000000000000000000000000000000") {
@@ -167,11 +176,14 @@ export default function LendingPanel({ feedPrices }: Props) {
       await fetchBalances();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(
-        msg.includes("user rejected") ? "Transaction rejected."
-        : msg.includes("LP:") ? msg.split("LP: ")[1] ?? "Contract error."
-        : "Transaction failed."
-      );
+      if (msg.includes("user rejected") || msg.includes("User denied")) {
+        setError("Transaction rejected.");
+      } else if (msg.includes("LP:")) {
+        setError(msg.split("LP: ")[1] ?? "Contract error.");
+      } else {
+        // Show the raw message so we can diagnose
+        setError(msg.slice(0, 200));
+      }
     } finally {
       setLoading(false);
       setApproving(false);
@@ -182,9 +194,19 @@ export default function LendingPanel({ feedPrices }: Props) {
 
   async function deposit() {
     await runTx(async () => {
-      const pool = new ethers.Contract(LENDING_POOL_ADDRESS, LENDING_POOL_ABI, signer!);
-      const amt  = ethers.parseEther(amount);
+      const amt        = ethers.parseEther(amount);
+      const wethContract = new ethers.Contract(WETH_ADDRESS, WETH_WRAP_ABI, signer!);
+
+      // Auto-wrap native ETH → WETH if the wallet doesn't have enough WETH
+      const wethBalance = await wethContract.balanceOf(address) as bigint;
+      if (wethBalance < amt) {
+        const needed = amt - wethBalance;
+        const wrapTx = await wethContract.deposit({ value: needed });
+        await wrapTx.wait();
+      }
+
       await approveERC20(WETH_ADDRESS, LENDING_POOL_ADDRESS, amt);
+      const pool = new ethers.Contract(LENDING_POOL_ADDRESS, LENDING_POOL_ABI, signer!);
       const tx   = await pool.deposit(amt);
       setTxHash(tx.hash);
       await tx.wait();
@@ -222,8 +244,13 @@ export default function LendingPanel({ feedPrices }: Props) {
 
   // ── Tab config ───────────────────────────────────────────────────────────────
 
-  const TABS: { key: ActionTab; label: string; action: () => void; token: string; balance: string | null }[] = [
-    { key: "deposit",  label: "Deposit",  action: deposit,  token: "WETH", balance: wethBal },
+  const totalDepositableBal = (parseFloat(ethBal ?? "0") + parseFloat(wethBal ?? "0")).toFixed(4);
+  const depositBalLabel     = ethBal !== null || wethBal !== null
+    ? `${wethBal ?? "0"} WETH + ${ethBal ?? "0"} ETH`
+    : null;
+
+  const TABS: { key: ActionTab; label: string; action: () => void; token: string; balance: string | null; maxAmount?: string }[] = [
+    { key: "deposit",  label: "Deposit",  action: deposit,  token: "ETH / WETH", balance: depositBalLabel, maxAmount: totalDepositableBal },
     { key: "borrow",   label: "Borrow",   action: borrow,   token: "MXT",  balance: null    },
     { key: "repay",    label: "Repay",    action: repay,    token: "MXT",  balance: mxtBal  },
     { key: "withdraw", label: "Withdraw", action: withdraw, token: "WETH", balance: position ? position.collateral.toFixed(4) : null },
@@ -365,11 +392,11 @@ export default function LendingPanel({ feedPrices }: Props) {
         <div className="border border-border rounded-xl divide-y divide-border/50 text-xs">
           <div className="flex justify-between px-4 py-2.5">
             <span className="text-muted-foreground">Collateral factor (max LTV)</span>
-            <span className="text-foreground/80">75%</span>
+            <span className="text-foreground/80">80%</span>
           </div>
           <div className="flex justify-between px-4 py-2.5">
             <span className="text-muted-foreground">Liquidation threshold</span>
-            <span className="text-foreground/80">80%</span>
+            <span className="text-foreground/80">87%</span>
           </div>
           <div className="flex justify-between px-4 py-2.5">
             <span className="text-muted-foreground">Liquidation bonus</span>
@@ -411,9 +438,9 @@ export default function LendingPanel({ feedPrices }: Props) {
                 {activeTab.balance !== null && (
                   <div className="flex items-center gap-1.5">
                     <span className="text-muted-foreground text-xs">Bal: {activeTab.balance}</span>
-                    {parseFloat(activeTab.balance) > 0 && (
+                    {parseFloat(activeTab.maxAmount ?? activeTab.balance ?? "0") > 0 && (
                       <button
-                        onClick={() => setAmount(activeTab.balance!)}
+                        onClick={() => setAmount(activeTab.maxAmount ?? activeTab.balance!)}
                         className="text-violet-400 hover:text-violet-300 text-xs font-medium
                                    bg-violet-900/20 border border-violet-700/30 rounded px-1.5 py-0.5"
                       >
@@ -452,11 +479,11 @@ export default function LendingPanel({ feedPrices }: Props) {
                              disabled:opacity-40"
                 />
                 <span className={`shrink-0 border rounded-full px-3 py-1.5 text-sm font-semibold
-                  ${activeTab.token === "WETH"
-                    ? "bg-blue-900/60 text-blue-300 border-blue-700/50"
-                    : "bg-violet-900/60 text-violet-300 border-violet-700/50"}`}
+                  ${activeTab.token === "MXT"
+                    ? "bg-violet-900/60 text-violet-300 border-violet-700/50"
+                    : "bg-blue-900/60 text-blue-300 border-blue-700/50"}`}
                 >
-                  {activeTab.token}
+                  {tab === "deposit" ? "ETH" : activeTab.token}
                 </span>
               </div>
 
